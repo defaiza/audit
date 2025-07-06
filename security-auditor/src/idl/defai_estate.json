@@ -1,0 +1,2107 @@
+{
+  "version": "0.1.0",
+  "name": "defai_estate",
+  "instructions": [
+    {
+      "name": "initializeGlobalCounter",
+      "accounts": [
+        {
+          "name": "authority",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "globalCounter",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "createEstate",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "globalCounter",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "estateMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "userStakeInfo",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "defaiCoreProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "inactivityPeriod",
+          "type": "i64"
+        },
+        {
+          "name": "gracePeriod",
+          "type": "i64"
+        },
+        {
+          "name": "ownerEmailHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "enableTrading",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tradingAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "userStakeInfo",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "defaiCoreProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "tradingStrategy",
+          "type": {
+            "defined": "TradingStrategy"
+          }
+        },
+        {
+          "name": "riskParameters",
+          "type": {
+            "defined": "RiskParameters"
+          }
+        }
+      ]
+    },
+    {
+      "name": "grantTradingPermission",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "beneficiaryIndex",
+          "type": "u8"
+        },
+        {
+          "name": "permissions",
+          "type": {
+            "defined": "BeneficiaryPermissions"
+          }
+        },
+        {
+          "name": "profitSharePercentage",
+          "type": "u8"
+        },
+        {
+          "name": "performanceFee",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "depositToTrading",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tradingAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "executeTrade",
+      "accounts": [
+        {
+          "name": "trader",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tradingAccount",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "tradeParams",
+          "type": {
+            "defined": "TradeParams"
+          }
+        },
+        {
+          "name": "tradeExecution",
+          "type": {
+            "defined": "TradeExecution"
+          }
+        }
+      ]
+    },
+    {
+      "name": "distributeProfits",
+      "accounts": [
+        {
+          "name": "anyone",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tradingAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "profitDistribution",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdrawProfits",
+      "accounts": [
+        {
+          "name": "withdrawer",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tradingAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "owner",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "pauseTrading",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "checkIn",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "updateBeneficiaries",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "userStakeInfo",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "defaiCoreProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "beneficiaries",
+          "type": {
+            "vec": {
+              "defined": "Beneficiary"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "triggerInheritance",
+      "accounts": [
+        {
+          "name": "anyone",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimInheritance",
+      "accounts": [
+        {
+          "name": "beneficiary",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "claimRecord",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "addRwa",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "rwa",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "rwaType",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "string"
+        },
+        {
+          "name": "metadataUri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "updateEstateValue",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "newValue",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "scanAssets",
+      "accounts": [
+        {
+          "name": "scanner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "assetSummary",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "updateRwa",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "rwa",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "newValue",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "newMetadataUri",
+          "type": {
+            "option": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "deleteRwa",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "rwa",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimRwa",
+      "accounts": [
+        {
+          "name": "beneficiary",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "claimRecord",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "estate",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "rwa",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimToken",
+      "accounts": [
+        {
+          "name": "beneficiary",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "claimRecord",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "estateTokenAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "beneficiaryTokenAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "associatedTokenProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimNft",
+      "accounts": [
+        {
+          "name": "beneficiary",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "claimRecord",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "nftMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "estateNftAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "beneficiaryNftAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "associatedTokenProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "closeEstate",
+      "accounts": [
+        {
+          "name": "authority",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "emergencyLock",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "emergencyUnlock",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initiateRecovery",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "recovery",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "executeRecovery",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "recovery",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "recoveryAddress",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "StrategyPerformance",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "estate",
+            "type": "publicKey"
+          },
+          {
+            "name": "strategy",
+            "type": {
+              "defined": "TradingStrategy"
+            }
+          },
+          {
+            "name": "totalTrades",
+            "type": "u64"
+          },
+          {
+            "name": "winningTrades",
+            "type": "u64"
+          },
+          {
+            "name": "totalPnl",
+            "type": "i64"
+          },
+          {
+            "name": "sharpeRatio",
+            "type": "i64"
+          },
+          {
+            "name": "maxDrawdown",
+            "type": "i64"
+          },
+          {
+            "name": "lastUpdated",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolWhitelist",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "publicKey"
+          },
+          {
+            "name": "orcaPools",
+            "type": {
+              "vec": "publicKey"
+            }
+          },
+          {
+            "name": "gmxMarkets",
+            "type": {
+              "vec": "publicKey"
+            }
+          },
+          {
+            "name": "optionsPrograms",
+            "type": {
+              "vec": "publicKey"
+            }
+          },
+          {
+            "name": "approvedOracles",
+            "type": {
+              "vec": "publicKey"
+            }
+          },
+          {
+            "name": "lastUpdated",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Estate",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "estateId",
+            "type": "publicKey"
+          },
+          {
+            "name": "owner",
+            "type": "publicKey"
+          },
+          {
+            "name": "ownerEmailHash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "lastActive",
+            "type": "i64"
+          },
+          {
+            "name": "inactivityPeriod",
+            "type": "i64"
+          },
+          {
+            "name": "gracePeriod",
+            "type": "i64"
+          },
+          {
+            "name": "beneficiaries",
+            "type": {
+              "vec": {
+                "defined": "Beneficiary"
+              }
+            }
+          },
+          {
+            "name": "totalBeneficiaries",
+            "type": "u8"
+          },
+          {
+            "name": "creationTime",
+            "type": "i64"
+          },
+          {
+            "name": "estateValue",
+            "type": "u64"
+          },
+          {
+            "name": "isLocked",
+            "type": "bool"
+          },
+          {
+            "name": "isClaimable",
+            "type": "bool"
+          },
+          {
+            "name": "totalRwas",
+            "type": "u32"
+          },
+          {
+            "name": "estateNumber",
+            "type": "u64"
+          },
+          {
+            "name": "totalClaims",
+            "type": "u8"
+          },
+          {
+            "name": "tradingEnabled",
+            "type": "bool"
+          },
+          {
+            "name": "totalDeposits",
+            "type": "u64"
+          },
+          {
+            "name": "totalWithdrawals",
+            "type": "u64"
+          },
+          {
+            "name": "realizedPnl",
+            "type": "i64"
+          },
+          {
+            "name": "highWaterMark",
+            "type": "u64"
+          },
+          {
+            "name": "lastProfitDistribution",
+            "type": "i64"
+          },
+          {
+            "name": "tradingStrategy",
+            "type": {
+              "defined": "TradingStrategy"
+            }
+          },
+          {
+            "name": "riskParameters",
+            "type": {
+              "defined": "RiskParameters"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradingAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "estate",
+            "type": "publicKey"
+          },
+          {
+            "name": "authority",
+            "type": "publicKey"
+          },
+          {
+            "name": "totalValue",
+            "type": "u64"
+          },
+          {
+            "name": "openPositions",
+            "type": {
+              "vec": {
+                "defined": "Position"
+              }
+            }
+          },
+          {
+            "name": "tradingHistoryCount",
+            "type": "u64"
+          },
+          {
+            "name": "lastSettlement",
+            "type": "i64"
+          },
+          {
+            "name": "activeStrategies",
+            "type": {
+              "vec": {
+                "defined": "TradingStrategy"
+              }
+            }
+          },
+          {
+            "name": "dailyVolume",
+            "type": "u64"
+          },
+          {
+            "name": "dailyPnl",
+            "type": "i64"
+          },
+          {
+            "name": "lastReset",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProfitDistribution",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "estate",
+            "type": "publicKey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "totalProfit",
+            "type": "u64"
+          },
+          {
+            "name": "distributions",
+            "type": {
+              "vec": {
+                "defined": "Distribution"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RWA",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "estate",
+            "type": "publicKey"
+          },
+          {
+            "name": "rwaType",
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "description",
+            "type": "string"
+          },
+          {
+            "name": "value",
+            "type": "string"
+          },
+          {
+            "name": "metadataUri",
+            "type": "string"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          },
+          {
+            "name": "isActive",
+            "type": "bool"
+          },
+          {
+            "name": "rwaNumber",
+            "type": "u32"
+          },
+          {
+            "name": "currentOwner",
+            "type": "publicKey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "estate",
+            "type": "publicKey"
+          },
+          {
+            "name": "beneficiary",
+            "type": "publicKey"
+          },
+          {
+            "name": "claimTime",
+            "type": "i64"
+          },
+          {
+            "name": "solAmount",
+            "type": "u64"
+          },
+          {
+            "name": "sharePercentage",
+            "type": "u8"
+          },
+          {
+            "name": "tokensClaimed",
+            "type": {
+              "vec": {
+                "defined": "TokenClaim"
+              }
+            }
+          },
+          {
+            "name": "nftsClaimed",
+            "type": {
+              "vec": "publicKey"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "AssetSummary",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "estate",
+            "type": "publicKey"
+          },
+          {
+            "name": "scanTime",
+            "type": "i64"
+          },
+          {
+            "name": "solBalance",
+            "type": "u64"
+          },
+          {
+            "name": "totalRwas",
+            "type": "u32"
+          },
+          {
+            "name": "activeRwas",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GlobalCounter",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "count",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserStakeInfo",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "publicKey"
+          },
+          {
+            "name": "amountStaked",
+            "type": "u64"
+          },
+          {
+            "name": "tier",
+            "type": "u8"
+          },
+          {
+            "name": "lastStakeTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "lastClaimTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "accumulatedRewards",
+            "type": "u64"
+          },
+          {
+            "name": "lockedUntil",
+            "type": "i64"
+          },
+          {
+            "name": "autoCompound",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Recovery",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "estate",
+            "type": "publicKey"
+          },
+          {
+            "name": "initiator",
+            "type": "publicKey"
+          },
+          {
+            "name": "initiationTime",
+            "type": "i64"
+          },
+          {
+            "name": "executionTime",
+            "type": "i64"
+          },
+          {
+            "name": "reason",
+            "type": "string"
+          },
+          {
+            "name": "isExecuted",
+            "type": "bool"
+          }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "StockTicker",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "symbol",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "oracle",
+            "type": "publicKey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PerpMarket",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "symbol",
+            "type": {
+              "array": [
+                "u8",
+                6
+              ]
+            }
+          },
+          {
+            "name": "marketIndex",
+            "type": "u16"
+          },
+          {
+            "name": "oracle",
+            "type": "publicKey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradeExecution",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "strategyType",
+            "type": {
+              "defined": "StrategyType"
+            }
+          },
+          {
+            "name": "entryPrice",
+            "type": "u64"
+          },
+          {
+            "name": "targetPrice",
+            "type": "u64"
+          },
+          {
+            "name": "stopLoss",
+            "type": "u64"
+          },
+          {
+            "name": "positionSize",
+            "type": "u64"
+          },
+          {
+            "name": "leverage",
+            "type": "u8"
+          },
+          {
+            "name": "expiry",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "metadata",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RiskParameters",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "maxDrawdownPct",
+            "type": "u8"
+          },
+          {
+            "name": "maxDailyLossPct",
+            "type": "u8"
+          },
+          {
+            "name": "maxPositionConcentration",
+            "type": "u8"
+          },
+          {
+            "name": "minLiquidityBuffer",
+            "type": "u64"
+          },
+          {
+            "name": "maxGasPerDay",
+            "type": "u64"
+          },
+          {
+            "name": "allowedProtocols",
+            "type": {
+              "vec": {
+                "defined": "Protocol"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Beneficiary",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "address",
+            "type": "publicKey"
+          },
+          {
+            "name": "sharePercentage",
+            "type": "u8"
+          },
+          {
+            "name": "permissions",
+            "type": {
+              "defined": "BeneficiaryPermissions"
+            }
+          },
+          {
+            "name": "profitSharePercentage",
+            "type": "u8"
+          },
+          {
+            "name": "performanceFee",
+            "type": "u8"
+          },
+          {
+            "name": "totalProfitReceived",
+            "type": "u64"
+          },
+          {
+            "name": "lastTradeTime",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BeneficiaryPermissions",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "canTrade",
+            "type": "bool"
+          },
+          {
+            "name": "canWithdrawProfits",
+            "type": "bool"
+          },
+          {
+            "name": "maxPositionSize",
+            "type": "u64"
+          },
+          {
+            "name": "allowedMarkets",
+            "type": {
+              "vec": "publicKey"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tokenMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "entryPrice",
+            "type": "u64"
+          },
+          {
+            "name": "entryTime",
+            "type": "i64"
+          },
+          {
+            "name": "trader",
+            "type": "publicKey"
+          },
+          {
+            "name": "strategyType",
+            "type": {
+              "defined": "StrategyType"
+            }
+          },
+          {
+            "name": "leverage",
+            "type": "u8"
+          },
+          {
+            "name": "stopLoss",
+            "type": "u64"
+          },
+          {
+            "name": "takeProfit",
+            "type": "u64"
+          },
+          {
+            "name": "protocol",
+            "type": {
+              "defined": "Protocol"
+            }
+          },
+          {
+            "name": "positionId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Distribution",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "beneficiary",
+            "type": "publicKey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "sharePercentage",
+            "type": "u8"
+          },
+          {
+            "name": "performanceFee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradeParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tokenMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "isBuy",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenClaim",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "publicKey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradingStrategy",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "CashAndCarry",
+            "fields": [
+              {
+                "name": "maxBasisSpread",
+                "type": "u16"
+              },
+              {
+                "name": "minProfitThreshold",
+                "type": "u64"
+              },
+              {
+                "name": "preferredExchanges",
+                "type": {
+                  "vec": {
+                    "defined": "ExchangeType"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "StockOptions",
+            "fields": [
+              {
+                "name": "allowedTickers",
+                "type": {
+                  "vec": {
+                    "defined": "StockTicker"
+                  }
+                }
+              },
+              {
+                "name": "maxOptionsExposure",
+                "type": "u8"
+              },
+              {
+                "name": "strategies",
+                "type": {
+                  "vec": {
+                    "defined": "OptionsStrategy"
+                  }
+                }
+              },
+              {
+                "name": "maxDaysToExpiry",
+                "type": "u16"
+              }
+            ]
+          },
+          {
+            "name": "OrcaWhirlpool",
+            "fields": [
+              {
+                "name": "allowedPools",
+                "type": {
+                  "vec": "publicKey"
+                }
+              },
+              {
+                "name": "maxSlippageBps",
+                "type": "u16"
+              },
+              {
+                "name": "rebalanceThreshold",
+                "type": "u8"
+              },
+              {
+                "name": "feeTiers",
+                "type": {
+                  "vec": {
+                    "defined": "FeeTier"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "GmxPerpetuals",
+            "fields": [
+              {
+                "name": "allowedMarkets",
+                "type": {
+                  "vec": {
+                    "defined": "PerpMarket"
+                  }
+                }
+              },
+              {
+                "name": "maxLeverage",
+                "type": "u8"
+              },
+              {
+                "name": "stopLossBps",
+                "type": "u16"
+              },
+              {
+                "name": "takeProfitBps",
+                "type": "u16"
+              },
+              {
+                "name": "maxPositionSizePct",
+                "type": "u8"
+              }
+            ]
+          },
+          {
+            "name": "MultiStrategy",
+            "fields": [
+              {
+                "name": "strategyTypes",
+                "type": {
+                  "vec": {
+                    "defined": "StrategyType"
+                  }
+                }
+              },
+              {
+                "name": "allocationPercentages",
+                "type": "bytes"
+              },
+              {
+                "name": "rebalanceFrequency",
+                "type": "i64"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ExchangeType",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Serum"
+          },
+          {
+            "name": "Raydium"
+          },
+          {
+            "name": "Orca"
+          },
+          {
+            "name": "Jupiter"
+          },
+          {
+            "name": "Drift"
+          },
+          {
+            "name": "Mango"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OptionsStrategy",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "CoveredCall"
+          },
+          {
+            "name": "CashSecuredPut"
+          },
+          {
+            "name": "LongCall"
+          },
+          {
+            "name": "LongPut"
+          },
+          {
+            "name": "IronCondor"
+          },
+          {
+            "name": "Straddle"
+          },
+          {
+            "name": "Strangle"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeeTier",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "OneHundredth"
+          },
+          {
+            "name": "FiveHundredths"
+          },
+          {
+            "name": "ThirtyHundredths"
+          },
+          {
+            "name": "OnePercent"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StrategyType",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Arbitrage"
+          },
+          {
+            "name": "Options"
+          },
+          {
+            "name": "Swap"
+          },
+          {
+            "name": "Perpetual"
+          },
+          {
+            "name": "LiquidityProvision"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Protocol",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Orca"
+          },
+          {
+            "name": "Gmx"
+          },
+          {
+            "name": "Zeta"
+          },
+          {
+            "name": "Drift"
+          },
+          {
+            "name": "Jupiter"
+          },
+          {
+            "name": "Serum"
+          },
+          {
+            "name": "Phoenix"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradingStrategyPreset",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Conservative"
+          },
+          {
+            "name": "Balanced"
+          },
+          {
+            "name": "Aggressive"
+          },
+          {
+            "name": "Custom",
+            "fields": [
+              {
+                "defined": "TradingStrategy"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidInactivityPeriod",
+      "msg": "Invalid inactivity period. Must be between 24 hours and 300 years"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidGracePeriod",
+      "msg": "Invalid grace period. Must be between 24 hours and 90 days"
+    },
+    {
+      "code": 6002,
+      "name": "EstateLocked",
+      "msg": "Estate is locked"
+    },
+    {
+      "code": 6003,
+      "name": "UnauthorizedAccess",
+      "msg": "Unauthorized access"
+    },
+    {
+      "code": 6004,
+      "name": "EstateClaimable",
+      "msg": "Estate is already claimable"
+    },
+    {
+      "code": 6005,
+      "name": "TooManyBeneficiaries",
+      "msg": "Too many beneficiaries. Maximum is 10"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidBeneficiaryShares",
+      "msg": "Beneficiary shares must sum to 100%"
+    },
+    {
+      "code": 6007,
+      "name": "AlreadyClaimable",
+      "msg": "Estate is already claimable"
+    },
+    {
+      "code": 6008,
+      "name": "NotYetClaimable",
+      "msg": "Estate is not yet claimable"
+    },
+    {
+      "code": 6009,
+      "name": "NotClaimable",
+      "msg": "Estate is not claimable"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidBeneficiaryIndex",
+      "msg": "Invalid beneficiary index"
+    },
+    {
+      "code": 6011,
+      "name": "UnauthorizedBeneficiary",
+      "msg": "Unauthorized beneficiary"
+    },
+    {
+      "code": 6012,
+      "name": "AlreadyClaimed",
+      "msg": "Inheritance already claimed"
+    },
+    {
+      "code": 6013,
+      "name": "AlreadyLocked",
+      "msg": "Estate is already locked"
+    },
+    {
+      "code": 6014,
+      "name": "NotLocked",
+      "msg": "Estate is not locked"
+    },
+    {
+      "code": 6015,
+      "name": "RWAAlreadyDeleted",
+      "msg": "RWA already deleted"
+    },
+    {
+      "code": 6016,
+      "name": "InvalidClaimRecord",
+      "msg": "Invalid claim record"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidRWA",
+      "msg": "Invalid RWA"
+    },
+    {
+      "code": 6018,
+      "name": "NotAllClaimed",
+      "msg": "Not all beneficiaries have claimed"
+    },
+    {
+      "code": 6019,
+      "name": "MustClaimInheritanceFirst",
+      "msg": "Must claim inheritance first before claiming tokens"
+    },
+    {
+      "code": 6020,
+      "name": "TokenAlreadyClaimed",
+      "msg": "Token already claimed"
+    },
+    {
+      "code": 6021,
+      "name": "NFTAlreadyClaimed",
+      "msg": "NFT already claimed"
+    },
+    {
+      "code": 6022,
+      "name": "InvalidNFTAmount",
+      "msg": "Invalid NFT amount - must be exactly 1"
+    },
+    {
+      "code": 6023,
+      "name": "RecoveryTooEarly",
+      "msg": "Recovery can only be initiated after 30 days of being claimable"
+    },
+    {
+      "code": 6024,
+      "name": "RecoveryAlreadyExecuted",
+      "msg": "Recovery already executed"
+    },
+    {
+      "code": 6025,
+      "name": "RecoveryNotReady",
+      "msg": "Recovery time lock not yet expired"
+    },
+    {
+      "code": 6026,
+      "name": "TradingNotEnabled",
+      "msg": "Trading is not enabled for this estate"
+    },
+    {
+      "code": 6027,
+      "name": "TradingAlreadyEnabled",
+      "msg": "Trading is already enabled"
+    },
+    {
+      "code": 6028,
+      "name": "UnauthorizedTrader",
+      "msg": "Unauthorized trader"
+    },
+    {
+      "code": 6029,
+      "name": "PositionTooLarge",
+      "msg": "Position size too large"
+    },
+    {
+      "code": 6030,
+      "name": "InsufficientProfits",
+      "msg": "Insufficient profits for withdrawal"
+    },
+    {
+      "code": 6031,
+      "name": "InvalidPerformanceFee",
+      "msg": "Invalid performance fee"
+    },
+    {
+      "code": 6032,
+      "name": "DistributionTooEarly",
+      "msg": "Distribution too early"
+    },
+    {
+      "code": 6033,
+      "name": "InsufficientTier",
+      "msg": "Insufficient tier. Please stake more DEFAI tokens"
+    },
+    {
+      "code": 6034,
+      "name": "GoldTierRequired",
+      "msg": "This feature requires Gold tier (10M+ DEFAI staked)"
+    },
+    {
+      "code": 6035,
+      "name": "TitaniumTierRequired",
+      "msg": "This feature requires Titanium tier (100M+ DEFAI staked)"
+    },
+    {
+      "code": 6036,
+      "name": "InfiniteTierRequired",
+      "msg": "This feature requires Infinite tier (1B+ DEFAI staked)"
+    },
+    {
+      "code": 6037,
+      "name": "EstateLimitExceeded",
+      "msg": "Estate limit exceeded for your tier"
+    },
+    {
+      "code": 6038,
+      "name": "BeneficiaryLimitExceeded",
+      "msg": "Beneficiary limit exceeded for your tier"
+    },
+    {
+      "code": 6039,
+      "name": "RWALimitExceeded",
+      "msg": "RWA limit exceeded for your tier"
+    },
+    {
+      "code": 6040,
+      "name": "StrategyNotAvailable",
+      "msg": "Trading strategy not available for your tier"
+    },
+    {
+      "code": 6041,
+      "name": "InvalidStrategyParameters",
+      "msg": "Invalid strategy parameters"
+    },
+    {
+      "code": 6042,
+      "name": "InvalidAllocation",
+      "msg": "Invalid allocation percentages"
+    },
+    {
+      "code": 6043,
+      "name": "UnauthorizedPool",
+      "msg": "Unauthorized pool or market"
+    },
+    {
+      "code": 6044,
+      "name": "DailyLossLimitExceeded",
+      "msg": "Daily loss limit exceeded"
+    }
+  ]
+}

@@ -1,0 +1,4157 @@
+use anchor_lang::prelude::*;
+use anchor_spl::{
+    token::{self, Token, TokenAccount, Transfer},
+    token_2022::{self as token22, Token2022},
+    token_interface::{TokenAccount as TokenAccount2022, TransferChecked},
+};
+use anchor_lang::prelude::InterfaceAccount;
+
+// Metaplex imports would go here:
+// use mpl_token_metadata::...
+
+declare_id!("2MgJxwbuiFFtM3JLyvBT54q6YfNETdXxkyZ8wKivvT7J");
+
+// Tax configuration constants (basis points = parts per 10_000)
+const INITIAL_TAX_BPS: u16 = 500;     // 5%
+const TAX_INCREMENT_BPS: u16 = 50;    // 0.5% each swap
+const TAX_CAP_BPS: u16 = 3000;        // 30% maximum tax
+const TAX_RESET_DURATION: i64 = 24 * 60 * 60; // 24 hours in seconds
+
+// Vesting constants
+const VESTING_DURATION: i64 = 90 * 24 * 60 * 60; // 90 days in seconds
+const CLIFF_DURATION: i64 = 2 * 24 * 60 * 60;    // 2 days in seconds
+
+// Bonus ranges per tier (basis points)
+const TIER_0_MIN_BONUS: u16 = 0;     // 0%
+const TIER_0_MAX_BONUS: u16 = 0;     // 0% - NO BONUS for OG
+const TIER_1_MIN_BONUS: u16 = 0;     // 0% - Train
+const TIER_1_MAX_BONUS: u16 = 1500;  // 15% - Train
+const TIER_2_MIN_BONUS: u16 = 1500;  // 15% - Boat
+const TIER_2_MAX_BONUS: u16 = 5000;  // 50% - Boat
+const TIER_3_MIN_BONUS: u16 = 2000;  // 20% - Plane
+const TIER_3_MAX_BONUS: u16 = 10000; // 100% - Plane
+const TIER_4_MIN_BONUS: u16 = 5000;  // 50% - Rocket
+const TIER_4_MAX_BONUS: u16 = 30000; // 300% - Rocket
+
+// OG NFT Whitelist Merkle Root
+const WHITELIST_ROOT: [u8; 32] = [75, 45, 118, 95, 221, 195, 106, 5, 187, 186, 56, 74, 112, 138, 19, 108, 59, 243, 44, 140, 228, 10, 199, 125, 41, 242, 223, 102, 191, 115, 73, 142];
+
+#[program]
+pub mod defai_swap {
+    use super::*;
+
+    pub fn initialize(
+        ctx: Context<Initialize>,
+        prices: Vec<u64>,
+    ) -> Result<()> {
+        require!(prices.len() == 5, ErrorCode::InvalidInput);
+
+        let cfg = &mut ctx.accounts.config;
+        cfg.admin = ctx.accounts.admin.key();
+        cfg.old_mint = *ctx.accounts.old_mint.key;
+        cfg.new_mint = *ctx.accounts.new_mint.key;
+        cfg.collection = *ctx.accounts.collection.key;
+        cfg.treasury = *ctx.accounts.treasury.key;
+        cfg.prices = [prices[0], prices[1], prices[2], prices[3], prices[4]];
+        cfg.paused = false; // Initialize as not paused
+
+        // Persist escrow bump for later signer seeds
+        let escrow = &mut ctx.accounts.escrow;
+        escrow.bump = ctx.bumps.escrow;
+
+        // Initialize tax state
+        let tax_state = &mut ctx.accounts.tax_state;
+        tax_state.current_bps = INITIAL_TAX_BPS;
+        tax_state.bump = ctx.bumps.tax_state;
+        tax_state.last_reset_ts = Clock::get()?.unix_timestamp;
+        Ok(())
+    }
+
+    /// Reset tax to initial rate if 24 hours have passed. Can be called by anyone.
+    pub fn reset_tax(ctx: Context<ResetTax>) -> Result<()> {
+        let tax_state = &mut ctx.accounts.tax_state;
+        let now = Clock::get()?.unix_timestamp;
+        
+        // Check if 24 hours have passed since last reset
+        require!(
+            now >= tax_state.last_reset_ts + TAX_RESET_DURATION,
+            ErrorCode::TaxResetTooEarly
+        );
+        
+        // Reset tax to initial rate
+        tax_state.current_bps = INITIAL_TAX_BPS;
+        tax_state.last_reset_ts = now;
+        
+        Ok(())
+    }
+
+    /// Admin function to update tier prices
+    pub fn update_prices(ctx: Context<UpdateConfig>, prices: Vec<u64>) -> Result<()> {
+        require!(prices.len() == 5, ErrorCode::InvalidInput);
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        
+        let cfg = &mut ctx.accounts.config;
+        cfg.prices = [prices[0], prices[1], prices[2], prices[3], prices[4]];
+        
+        Ok(())
+    }
+
+    /// Admin function to update treasury address
+    pub fn update_treasury(ctx: Context<UpdateConfig>, new_treasury: Pubkey) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        
+        let cfg = &mut ctx.accounts.config;
+        cfg.treasury = new_treasury;
+        
+        Ok(())
+    }
+
+    /// Admin function to pause the protocol
+    pub fn pause(ctx: Context<UpdateConfig>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        require!(!ctx.accounts.config.paused, ErrorCode::AlreadyPaused);
+        
+        ctx.accounts.config.paused = true;
+        
+        Ok(())
+    }
+
+    /// Admin function to unpause the protocol
+    pub fn unpause(ctx: Context<UpdateConfig>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        require!(ctx.accounts.config.paused, ErrorCode::NotPaused);
+        
+        ctx.accounts.config.paused = false;
+        
+        Ok(())
+    }
+
+    /// Admin function to update the REWARDS mint address in Config after a redeploy
+    pub fn update_new_mint(ctx: Context<UpdateConfig>, new_mint: Pubkey) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        ctx.accounts.config.new_mint = new_mint;
+        Ok(())
+    }
+
+    pub fn initialize_whitelist(ctx: Context<InitializeWhitelist>) -> Result<()> {
+        let whitelist = &mut ctx.accounts.whitelist;
+        whitelist.root = WHITELIST_ROOT;
+        whitelist.claimed_count = 0;
+        Ok(())
+    }
+
+    /// Initialize BonusState for an NFT with a specific tier and bonus
+    pub fn initialize_bonus_state(
+        ctx: Context<InitializeBonusState>,
+        tier: u8,
+        bonus_bps: u16,
+    ) -> Result<()> {
+        // Verify admin
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        
+        require!(tier < 5, ErrorCode::InvalidTier);
+        
+        // Validate bonus is within tier range
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        require!(
+            bonus_bps >= min_bonus && bonus_bps <= max_bonus,
+            ErrorCode::InvalidInput
+        );
+
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.bonus_bps = bonus_bps;
+        bonus_state.redeemed = false;
+        bonus_state.tier = tier;
+        bonus_state.bump = ctx.bumps.bonus_state;
+
+        Ok(())
+    }
+
+    /// Capture an NFT with OLD tokens (no tax)
+    pub fn capture(ctx: Context<Capture>, tier: u8) -> Result<()> {
+        msg!("=== CAPTURE NFT START ===");
+        msg!("User: {}", ctx.accounts.user.key());
+        msg!("Tier: {}", tier);
+        
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+        msg!("Protocol checks passed");
+
+        let cfg = &ctx.accounts.config;
+        let price = cfg.prices[tier as usize];
+        msg!("Price for tier {}: {}", tier, price);
+
+        // Verify user OLD token balance is sufficient
+        msg!("User OLD balance: {}", ctx.accounts.user_old.amount);
+        require!(ctx.accounts.user_old.amount >= price, ErrorCode::InsufficientOldTokens);
+        msg!("User has sufficient OLD tokens.");
+
+        // Verify escrow has 1+ NFTs
+        msg!("NFT vault balance: {}", ctx.accounts.vault_nft.amount);
+        require!(ctx.accounts.vault_nft.amount >= 1, ErrorCode::NoLiquidity);
+        msg!("NFT vault has liquidity.");
+
+        // Validate mint constraints
+        msg!("User OLD mint: {}", ctx.accounts.user_old.mint);
+        msg!("Burn OLD mint: {}", ctx.accounts.burn_old.mint);
+        msg!("Config old mint: {}", cfg.old_mint);
+        msg!("NFT mint: {}", ctx.accounts.nft_mint.key());
+        msg!("Vault NFT mint: {}", ctx.accounts.vault_nft.mint);
+        msg!("User NFT mint: {}", ctx.accounts.user_nft.mint);
+        
+        require!(
+            ctx.accounts.user_old.mint == cfg.old_mint,
+            ErrorCode::InvalidMint
+        );
+        require!(
+            ctx.accounts.burn_old.mint == cfg.old_mint,
+            ErrorCode::InvalidMint
+        );
+        require!(
+            ctx.accounts.vault_nft.mint == ctx.accounts.nft_mint.key(),
+            ErrorCode::InvalidMint
+        );
+        require!(
+            ctx.accounts.user_nft.mint == ctx.accounts.nft_mint.key(),
+            ErrorCode::InvalidMint
+        );
+        msg!("Mint validations passed");
+
+        // Validate account ownership
+        msg!("User OLD owner: {}", ctx.accounts.user_old.owner);
+        msg!("Burn OLD owner: {}", ctx.accounts.burn_old.owner);
+        msg!("Vault NFT owner: {}", ctx.accounts.vault_nft.owner);
+        msg!("User NFT owner: {}", ctx.accounts.user_nft.owner);
+        msg!("Escrow PDA: {}", ctx.accounts.escrow.key());
+        
+        require!(
+            ctx.accounts.user_old.owner == ctx.accounts.user.key(),
+            ErrorCode::Unauthorized
+        );
+        require!(
+            ctx.accounts.burn_old.owner == ctx.accounts.escrow.key(),
+            ErrorCode::Unauthorized
+        );
+        require!(
+            ctx.accounts.vault_nft.owner == ctx.accounts.escrow.key(),
+            ErrorCode::Unauthorized
+        );
+        require!(
+            ctx.accounts.user_nft.owner == ctx.accounts.user.key(),
+            ErrorCode::Unauthorized
+        );
+        msg!("Ownership validations passed");
+
+        // Transfer OLD tokens from user to escrow (will sit there permanently)
+        msg!("Transferring OLD tokens from user to burn account...");
+        let cpi_ctx_old = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_old.to_account_info(),
+                to: ctx.accounts.burn_old.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        token::transfer(cpi_ctx_old, price)?;
+        msg!("OLD token transfer successful.");
+
+        // Generate random bonus within tier range (same as swap_defai_for_nft)
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        
+        let random_bonus = if bonus_range == 0 {
+            // Fixed bonus (tier 0)
+            min_bonus
+        } else {
+            // Random bonus within range
+            let clock = Clock::get()?;
+            let seed = clock.unix_timestamp as u64 ^ ctx.accounts.user.key().to_bytes()[0] as u64;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+
+        // Create BonusState for this NFT
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.redeemed = false;
+        bonus_state.tier = tier;
+        bonus_state.bump = ctx.bumps.bonus_state;
+        msg!("Bonus state created with bonus: {} BPS", random_bonus);
+
+        // Transfer NFT from vault to user (signed by escrow PDA)
+        msg!("Transferring NFT from vault to user...");
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_nft = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            token22::TransferChecked {
+                from: ctx.accounts.vault_nft.to_account_info(),
+                to: ctx.accounts.user_nft.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.nft_mint.to_account_info(),
+            },
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+        msg!("NFT transfer successful.");
+
+        msg!("=== CAPTURE NFT COMPLETE ===");
+        Ok(())
+    }
+
+    pub fn capture_og_whitelisted(
+        ctx: Context<CaptureOgWhitelisted>, 
+        proof: Vec<[u8; 32]>
+    ) -> Result<()> {
+        let cfg = &ctx.accounts.config;
+        require!(!cfg.paused, ErrorCode::ProtocolPaused);
+        let whitelist = &mut ctx.accounts.whitelist;
+        let user_claim = &mut ctx.accounts.user_claim;
+
+        // Ensure this is for tier 0 (OG NFT)
+        const OG_TIER: u8 = 0;
+        let price = cfg.prices[OG_TIER as usize];
+
+        // Check if user already claimed
+        require!(!user_claim.claimed, ErrorCode::AlreadyClaimed);
+
+        // Verify Merkle proof
+        let leaf = anchor_lang::solana_program::keccak::hash(
+            ctx.accounts.user.key.as_ref()
+        ).0;
+        
+        require!(
+            verify_proof(&proof, whitelist.root, leaf),
+            ErrorCode::InvalidMerkleProof
+        );
+
+        // Mark as claimed
+        user_claim.claimed = true;
+        user_claim.user = ctx.accounts.user.key();
+        user_claim.claimed_at = Clock::get()?.unix_timestamp;
+        whitelist.claimed_count += 1;
+
+        // Ensure the user has enough OLD tokens
+        require!(ctx.accounts.user_old.amount >= price, ErrorCode::InsufficientOldTokens);
+        // Ensure the vault has an NFT to sell
+        require!(ctx.accounts.vault_nft.amount >= 1, ErrorCode::NoLiquidity);
+
+        // Transfer OLD tokens
+        let cpi_ctx_old = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_old.to_account_info(),
+                to: ctx.accounts.burn_old.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        token::transfer(cpi_ctx_old, price)?;
+
+        // Transfer NFT
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_nft = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.vault_nft.to_account_info(),
+                to: ctx.accounts.user_nft.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.vault_nft.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        // Generate random bonus for OG tier (10-20%)
+        let (min_bonus, max_bonus) = get_tier_bonus_range(OG_TIER);
+        let bonus_range = max_bonus - min_bonus;
+        
+        let random_bonus = if bonus_range == 0 {
+            min_bonus
+        } else {
+            let clock = Clock::get()?;
+            let seed = clock.unix_timestamp as u64 ^ ctx.accounts.user.key().to_bytes()[0] as u64;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+
+        // Create BonusState for this NFT
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.redeemed = false;
+        bonus_state.tier = OG_TIER;
+        bonus_state.bump = ctx.bumps.bonus_state;
+
+        Ok(())
+    }
+
+    /// Swap DEFAI tokens for an NFT with an incrementing tax sent to the treasury.
+    /// Creates a BonusState for the NFT with a random bonus within the tier's range.
+    pub fn swap_defai_for_nft(ctx: Context<SwapDefaiForNft>, tier: u8) -> Result<()> {
+        msg!("=== SWAP DEFAI FOR NFT START ===");
+        msg!("User: {}", ctx.accounts.user.key());
+        msg!("Tier: {}", tier);
+        
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+        msg!("Protocol checks passed");
+
+        let cfg = &ctx.accounts.config;
+        let price = cfg.prices[tier as usize];
+        msg!("Price for tier {}: {}", tier, price);
+
+        // Validate user balance and vault liquidity
+        msg!("User DEFAI balance: {}", ctx.accounts.user_defai.amount);
+        require!(ctx.accounts.user_defai.amount >= price, ErrorCode::InsufficientDefaiTokens);
+        
+        msg!("NFT vault balance: {}", ctx.accounts.vault_nft.amount);
+        require!(ctx.accounts.vault_nft.amount >= 1, ErrorCode::NoLiquidity);
+        
+        msg!("Balance checks passed");
+
+        // Ensure the treasury associated token account belongs to the configured treasury pubkey
+        msg!("Treasury owner: {}", ctx.accounts.treasury_defai.owner);
+        msg!("Config treasury: {}", cfg.treasury);
+        require!(ctx.accounts.treasury_defai.owner == cfg.treasury, ErrorCode::InvalidTreasury);
+        msg!("Treasury validation passed");
+
+        // Calculate tax and net amounts
+        let current_bps = ctx.accounts.tax_state.current_bps as u64;
+        msg!("Current tax BPS: {}", current_bps);
+        
+        let tax_amount = price
+            .checked_mul(current_bps)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(ErrorCode::MathOverflow)?;
+        let net_amount = price.checked_sub(tax_amount).ok_or(ErrorCode::MathOverflow)?;
+        
+        msg!("Tax amount: {}, Net amount: {}", tax_amount, net_amount);
+
+        // Validate mint constraints
+        msg!("User DEFAI mint: {}", ctx.accounts.user_defai.mint);
+        msg!("Treasury DEFAI mint: {}", ctx.accounts.treasury_defai.mint);
+        msg!("Escrow DEFAI mint: {}", ctx.accounts.escrow_defai.mint);
+        msg!("Config new mint: {}", cfg.new_mint);
+        
+        require!(
+            ctx.accounts.user_defai.mint == cfg.new_mint,
+            ErrorCode::InvalidMint
+        );
+        require!(
+            ctx.accounts.treasury_defai.mint == cfg.new_mint,
+            ErrorCode::InvalidMint
+        );
+        require!(
+            ctx.accounts.escrow_defai.mint == cfg.new_mint,
+            ErrorCode::InvalidMint
+        );
+        msg!("Mint validations passed");
+
+        // Transfer tax to treasury
+        msg!("Transferring tax to treasury...");
+        let cpi_ctx_tax = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.user_defai.to_account_info(),
+                to: ctx.accounts.treasury_defai.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_defai.to_account_info(),
+            },
+        );
+        token22::transfer_checked(cpi_ctx_tax, tax_amount, 9)?;
+        msg!("Tax transfer successful");
+
+        // Transfer net amount to escrow DEFAI vault
+        msg!("Transferring net amount to escrow...");
+        let cpi_ctx_net = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.user_defai.to_account_info(),
+                to: ctx.accounts.escrow_defai.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_defai.to_account_info(),
+            },
+        );
+        token22::transfer_checked(cpi_ctx_net, net_amount, 9)?;
+        msg!("Net transfer successful");
+
+        // Generate random bonus within tier range
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        
+        let random_bonus = if bonus_range == 0 {
+            // Fixed bonus (tier 0)
+            min_bonus
+        } else {
+            // Random bonus within range
+            let clock = Clock::get()?;
+            let seed = clock.unix_timestamp as u64 ^ ctx.accounts.user.key().to_bytes()[0] as u64;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+        
+        msg!("Generated bonus: {} BPS", random_bonus);
+
+        // Create BonusState for this NFT
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.redeemed = false;
+        bonus_state.tier = tier;
+        bonus_state.bump = ctx.bumps.bonus_state;
+        msg!("Bonus state created");
+
+        // Transfer NFT from vault to user (signed by escrow PDA)
+        msg!("Transferring NFT from vault to user...");
+        msg!("NFT mint: {}", ctx.accounts.vault_nft.mint);
+        msg!("Vault NFT owner: {}", ctx.accounts.vault_nft.owner);
+        msg!("User NFT owner: {}", ctx.accounts.user_nft.owner);
+        msg!("Escrow PDA: {}", ctx.accounts.escrow.key());
+        
+        // Validate NFT mints match
+        require!(
+            ctx.accounts.vault_nft.mint == ctx.accounts.user_nft.mint,
+            ErrorCode::InvalidMint
+        );
+        msg!("NFT mint validation passed");
+        
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_nft = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.vault_nft.to_account_info(),
+                to: ctx.accounts.user_nft.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.vault_nft.to_account_info(),
+            },
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+        msg!("NFT transfer successful");
+
+        // Increment tax for next swap
+        let new_bps = ctx.accounts.tax_state.current_bps.saturating_add(TAX_INCREMENT_BPS);
+        ctx.accounts.tax_state.current_bps = new_bps.min(TAX_CAP_BPS);
+        msg!("Tax incremented to: {} BPS", ctx.accounts.tax_state.current_bps);
+
+        msg!("=== SWAP DEFAI FOR NFT COMPLETE ===");
+        Ok(())
+    }
+
+    /// Redeem an NFT for DEFAI tokens. Base amount is transferred immediately,
+    /// bonus amount is vested over 90 days with a 2-day cliff.
+    pub fn redeem(ctx: Context<Redeem>, tier: u8) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+        
+        let cfg = &ctx.accounts.config;
+        let base_price = cfg.prices[tier as usize];
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        
+        // Verify the NFT hasn't already been redeemed
+        require!(!bonus_state.redeemed, ErrorCode::NftAlreadyRedeemed);
+        
+        // Verify the user holds at least 1 NFT of this mint
+        require!(ctx.accounts.user_nft.amount >= 1, ErrorCode::NoNft);
+
+        // Calculate immediate payout (base price only)
+        let immediate_payout = base_price;
+
+        // Calculate bonus amount for vesting
+        let bonus_amount = base_price
+            .checked_mul(bonus_state.bonus_bps as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        // Ensure there is enough DEFAI liquidity in escrow for immediate payout
+        require!(
+            ctx.accounts.escrow_defai.amount >= immediate_payout,
+            ErrorCode::NoLiquidity
+        );
+
+        // Transfer NFT back to the escrow vault
+        let cpi_ctx_nft = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_nft.to_account_info(),
+                to: ctx.accounts.vault_nft.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_nft.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        // Transfer immediate payout from escrow to user
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_defai = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai.to_account_info(),
+                to: ctx.accounts.user_defai.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_defai, immediate_payout, 9)?;
+
+        // Mark as redeemed
+        bonus_state.redeemed = true;
+
+        // Create vesting state if there's a bonus
+        if bonus_amount > 0 {
+            let vesting_state = &mut ctx.accounts.vesting_state;
+            vesting_state.user = ctx.accounts.user.key();
+            vesting_state.nft_mint = ctx.accounts.user_nft.mint;
+            vesting_state.total_amount = bonus_amount;
+            vesting_state.claimed_amount = 0;
+            vesting_state.start_ts = Clock::get()?.unix_timestamp;
+            vesting_state.cliff_ts = vesting_state.start_ts + CLIFF_DURATION;
+            vesting_state.end_ts = vesting_state.start_ts + VESTING_DURATION;
+            vesting_state.bump = ctx.bumps.vesting_state;
+        }
+
+        Ok(())
+    }
+
+    /// Claim vested bonus tokens
+    pub fn claim_vested(ctx: Context<ClaimVested>) -> Result<()> {
+        let vesting_state = &mut ctx.accounts.vesting_state;
+        let now = Clock::get()?.unix_timestamp;
+
+        // Check if past cliff period
+        require!(now >= vesting_state.cliff_ts, ErrorCode::StillInCliff);
+
+        // Calculate vested amount
+        let vested_amount = if now >= vesting_state.end_ts {
+            // Fully vested
+            vesting_state.total_amount
+        } else {
+            // Partially vested - linear from cliff to end
+            let vesting_duration = vesting_state.end_ts - vesting_state.cliff_ts;
+            let time_vested = now - vesting_state.cliff_ts;
+            
+            vesting_state.total_amount
+                .checked_mul(time_vested as u64)
+                .ok_or(ErrorCode::MathOverflow)?
+                .checked_div(vesting_duration as u64)
+                .ok_or(ErrorCode::MathOverflow)?
+        };
+
+        // Calculate claimable amount
+        let claimable = vested_amount
+            .checked_sub(vesting_state.claimed_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        require!(claimable > 0, ErrorCode::NothingToClaim);
+
+        // Transfer claimable amount
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai.to_account_info(),
+                to: ctx.accounts.user_defai.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx, claimable, 9)?;
+
+        // Update claimed amount
+        vesting_state.claimed_amount = vesting_state.claimed_amount
+            .checked_add(claimable)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        Ok(())
+    }
+
+    /// Admin-only: withdraw arbitrary SPL/Token-2022 tokens from an escrow vault
+    pub fn admin_withdraw(ctx: Context<AdminWithdraw>, amount: u64) -> Result<()> {
+        // Enforce admin signer matches config.admin
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+
+        // Amount must be > 0
+        require!(amount > 0, ErrorCode::InvalidInput);
+
+        // Source and destination token accounts must hold the same mint
+        require_keys_eq!(
+            ctx.accounts.source_vault.mint,
+            ctx.accounts.dest.mint,
+            ErrorCode::InvalidInput
+        );
+
+        // Transfer `amount` tokens from the escrow-owned source vault to the admin
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.source_vault.to_account_info(),
+                to: ctx.accounts.dest.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+            },
+            signer_seeds,
+        );
+        token::transfer(cpi_ctx, amount)?;
+
+        Ok(())
+    }
+
+    /// Admin function to update NFT metadata URI
+    pub fn update_metadata(
+        ctx: Context<UpdateMetadata>,
+        new_uri: String,
+        new_name: Option<String>,
+        new_symbol: Option<String>,
+    ) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        
+        // This is a placeholder - actual implementation would use Metaplex's update instruction
+        // In production, you'd need to call the Metaplex metadata program to update
+        // For now, we'll just validate the inputs
+        require!(new_uri.len() <= 200, ErrorCode::InvalidInput);
+        if let Some(name) = &new_name {
+            require!(name.len() <= 32, ErrorCode::InvalidInput);
+        }
+        if let Some(symbol) = &new_symbol {
+            require!(symbol.len() <= 10, ErrorCode::InvalidInput);
+        }
+        
+        Ok(())
+    }
+
+    /// Admin function to accelerate vesting for a specific user
+    pub fn accelerate_vesting(
+        ctx: Context<AccelerateVesting>,
+        acceleration_percent: u16, // Basis points (0-10000)
+    ) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        require!(acceleration_percent <= 10000, ErrorCode::InvalidInput);
+        
+        let vesting_state = &mut ctx.accounts.vesting_state;
+        let now = Clock::get()?.unix_timestamp;
+        
+        // Calculate current vested amount
+        let vested_amount = if now >= vesting_state.end_ts {
+            vesting_state.total_amount
+        } else if now < vesting_state.cliff_ts {
+            0
+        } else {
+            let vesting_duration = vesting_state.end_ts - vesting_state.cliff_ts;
+            let time_vested = now - vesting_state.cliff_ts;
+            
+            vesting_state.total_amount
+                .checked_mul(time_vested as u64)
+                .ok_or(ErrorCode::MathOverflow)?
+                .checked_div(vesting_duration as u64)
+                .ok_or(ErrorCode::MathOverflow)?
+        };
+        
+        // Apply acceleration
+        let accelerated_amount = vested_amount
+            .checked_mul(10000 + acceleration_percent as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)?
+            .min(vesting_state.total_amount);
+        
+        // Update cliff to allow immediate claiming
+        if accelerated_amount > vested_amount {
+            vesting_state.cliff_ts = vesting_state.cliff_ts.min(now);
+            // Adjust end time proportionally
+            let remaining = vesting_state.total_amount - accelerated_amount;
+            if remaining > 0 && accelerated_amount > 0 {
+                let new_duration = vesting_state.end_ts - now;
+                let acceleration_factor = (vesting_state.total_amount * 10000) / accelerated_amount;
+                vesting_state.end_ts = now + (new_duration * acceleration_factor as i64 / 10000);
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Admin function for emergency unlock of all vesting
+    pub fn emergency_unlock_vesting(ctx: Context<AccelerateVesting>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        
+        let vesting_state = &mut ctx.accounts.vesting_state;
+        let now = Clock::get()?.unix_timestamp;
+        
+        // Set cliff to now and end to now to make everything immediately claimable
+        vesting_state.cliff_ts = now;
+        vesting_state.end_ts = now;
+        
+        Ok(())
+    }
+
+    /// Batch redeem multiple NFTs at once
+    pub fn batch_redeem(ctx: Context<BatchRedeem>, tiers: Vec<u8>) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!(tiers.len() > 0 && tiers.len() <= 5, ErrorCode::InvalidInput);
+        
+        let cfg = &ctx.accounts.config;
+        let mut total_immediate_payout = 0u64;
+        
+        // Calculate total immediate payout
+        for tier in &tiers {
+            require!((*tier as usize) < 5, ErrorCode::InvalidTier);
+            let base_price = cfg.prices[*tier as usize];
+            total_immediate_payout = total_immediate_payout
+                .checked_add(base_price)
+                .ok_or(ErrorCode::MathOverflow)?;
+        }
+        
+        // Ensure sufficient liquidity
+        require!(
+            ctx.accounts.escrow_defai.amount >= total_immediate_payout,
+            ErrorCode::NoLiquidity
+        );
+        
+        // Note: In a full implementation, we would:
+        // 1. Accept multiple NFT accounts
+        // 2. Transfer each NFT back to vault
+        // 3. Process each BonusState
+        // 4. Create VestingStates for each
+        // For now, this is a simplified version
+        
+        // Transfer total immediate payout
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai.to_account_info(),
+                to: ctx.accounts.user_defai.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx, total_immediate_payout, 9)?;
+        
+        Ok(())
+    }
+
+    /// Batch claim multiple vesting positions
+    pub fn batch_claim_vested(ctx: Context<BatchClaimVested>) -> Result<()> {
+        let mut total_claimable = 0u64;
+        let now = Clock::get()?.unix_timestamp;
+        
+        // Note: In full implementation, we'd accept multiple VestingState accounts
+        // For now, this processes a single vesting state as example
+        
+        let vesting_state = &mut ctx.accounts.vesting_state;
+        
+        // Check if past cliff
+        if now >= vesting_state.cliff_ts {
+            let vested_amount = if now >= vesting_state.end_ts {
+                vesting_state.total_amount
+            } else {
+                let vesting_duration = vesting_state.end_ts - vesting_state.cliff_ts;
+                let time_vested = now - vesting_state.cliff_ts;
+                
+                vesting_state.total_amount
+                    .checked_mul(time_vested as u64)
+                    .ok_or(ErrorCode::MathOverflow)?
+                    .checked_div(vesting_duration as u64)
+                    .ok_or(ErrorCode::MathOverflow)?
+            };
+            
+            let claimable = vested_amount
+                .checked_sub(vesting_state.claimed_amount)
+                .ok_or(ErrorCode::MathOverflow)?;
+                
+            if claimable > 0 {
+                total_claimable = total_claimable
+                    .checked_add(claimable)
+                    .ok_or(ErrorCode::MathOverflow)?;
+                vesting_state.claimed_amount = vesting_state.claimed_amount
+                    .checked_add(claimable)
+                    .ok_or(ErrorCode::MathOverflow)?;
+            }
+        }
+        
+        require!(total_claimable > 0, ErrorCode::NothingToClaim);
+        
+        // Transfer total claimable
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai.to_account_info(),
+                to: ctx.accounts.user_defai.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx, total_claimable, 9)?;
+        
+        Ok(())
+    }
+
+    /// Burn an NFT permanently
+    pub fn burn_nft(ctx: Context<BurnNft>, tier: u8) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidTier);
+        
+        // Verify user holds the NFT
+        require!(ctx.accounts.user_nft.amount >= 1, ErrorCode::NoNft);
+        
+        // Get bonus state
+        let bonus_state = &ctx.accounts.bonus_state;
+        
+        // Calculate burn reward (50% of base price as incentive)
+        let cfg = &ctx.accounts.config;
+        let base_price = cfg.prices[tier as usize];
+        let burn_reward = base_price
+            .checked_mul(5000) // 50% in basis points
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)?;
+        
+        // Transfer burn reward if escrow has funds
+        if ctx.accounts.escrow_defai.amount >= burn_reward && burn_reward > 0 {
+            let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+            let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program_2022.to_account_info(),
+                TransferChecked {from: ctx.accounts.escrow_defai.to_account_info(),
+                    to: ctx.accounts.user_defai.to_account_info(),
+                    authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai.to_account_info()},
+                signer_seeds,
+            );
+            token22::transfer_checked(cpi_ctx, burn_reward, 9)?;
+        }
+        
+        // Burn the NFT by transferring to a burn address (0x0)
+        // In production, we'd use token::burn instruction
+        // For now, transfer to escrow and mark as burned
+        let cpi_ctx_nft = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_nft.to_account_info(),
+                to: ctx.accounts.vault_nft.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_nft.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+        
+        // Update burn stats
+        let stats = &mut ctx.accounts.stats;
+        stats.total_burned = stats.total_burned
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
+        stats.burned_by_tier[tier as usize] = stats.burned_by_tier[tier as usize]
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
+        
+        Ok(())
+    }
+
+    /// List an NFT for sale on secondary market
+    pub fn list_nft(ctx: Context<ListNft>, price: u64) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!(price > 0, ErrorCode::InvalidInput);
+        
+        // Verify user holds the NFT
+        require!(ctx.accounts.user_nft.amount >= 1, ErrorCode::NoNft);
+        
+        let listing = &mut ctx.accounts.listing;
+        listing.seller = ctx.accounts.user.key();
+        listing.nft_mint = ctx.accounts.user_nft.mint;
+        listing.price = price;
+        listing.active = true;
+        listing.created_at = Clock::get()?.unix_timestamp;
+        listing.bump = ctx.bumps.listing;
+        
+        Ok(())
+    }
+
+    /// Buy a listed NFT from secondary market
+    pub fn buy_listed_nft(ctx: Context<BuyListedNft>) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        
+        let listing = &ctx.accounts.listing;
+        require!(listing.active, ErrorCode::ListingNotActive);
+        
+        // Calculate fees (10% royalty, split between treasury and escrow)
+        let price = listing.price;
+        let royalty = price
+            .checked_mul(1000) // 10% in basis points
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)?;
+        let treasury_fee = royalty / 2;
+        let escrow_fee = royalty - treasury_fee;
+        let seller_amount = price
+            .checked_sub(royalty)
+            .ok_or(ErrorCode::MathOverflow)?;
+        
+        // Transfer payment from buyer to seller
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.buyer_defai.to_account_info(),
+                to: ctx.accounts.seller_defai.to_account_info(),
+                authority: ctx.accounts.buyer.to_account_info(),
+                mint: ctx.accounts.buyer_defai.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx, seller_amount, 9)?;
+        
+        // Transfer treasury fee
+        if treasury_fee > 0 {
+            let cpi_ctx_treasury = CpiContext::new(
+                ctx.accounts.token_program_2022.to_account_info(),
+                TransferChecked {from: ctx.accounts.buyer_defai.to_account_info(),
+                    to: ctx.accounts.treasury_defai.to_account_info(),
+                    authority: ctx.accounts.buyer.to_account_info(),
+                mint: ctx.accounts.buyer_defai.to_account_info()},
+            );
+            token22::transfer_checked(cpi_ctx_treasury, treasury_fee, 9)?;
+        }
+        
+        // Transfer escrow fee
+        if escrow_fee > 0 {
+            let cpi_ctx_escrow = CpiContext::new(
+                ctx.accounts.token_program_2022.to_account_info(),
+                TransferChecked {from: ctx.accounts.buyer_defai.to_account_info(),
+                    to: ctx.accounts.escrow_defai.to_account_info(),
+                    authority: ctx.accounts.buyer.to_account_info(),
+                mint: ctx.accounts.buyer_defai.to_account_info()},
+            );
+            token22::transfer_checked(cpi_ctx_escrow, escrow_fee, 9)?;
+        }
+        
+        // Transfer NFT from seller to buyer
+        let seller_key = listing.seller;
+        let cpi_ctx_nft = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.seller_nft.to_account_info(),
+                to: ctx.accounts.buyer_nft.to_account_info(),
+                authority: ctx.accounts.seller.to_account_info(),
+                mint: ctx.accounts.seller_nft.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+        
+        // Mark listing as inactive
+        ctx.accounts.listing.active = false;
+        
+        Ok(())
+    }
+
+    /// Cancel an NFT listing
+    pub fn cancel_listing(ctx: Context<CancelListing>) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        
+        let listing = &mut ctx.accounts.listing;
+        require!(listing.active, ErrorCode::ListingNotActive);
+        require_keys_eq!(listing.seller, ctx.accounts.user.key(), ErrorCode::Unauthorized);
+        
+        listing.active = false;
+        
+        Ok(())
+    }
+
+    /// Register a referral code
+    pub fn register_referral(ctx: Context<RegisterReferral>, code: String) -> Result<()> {
+        require!(code.len() >= 3 && code.len() <= 20, ErrorCode::InvalidInput);
+        
+        let referral = &mut ctx.accounts.referral;
+        referral.referrer = ctx.accounts.user.key();
+        referral.code = code;
+        referral.total_referrals = 0;
+        referral.total_rewards = 0;
+        referral.created_at = Clock::get()?.unix_timestamp;
+        referral.bump = ctx.bumps.referral;
+        
+        Ok(())
+    }
+
+    /// Use a referral code during swap
+    pub fn swap_with_referral(
+        ctx: Context<SwapWithReferral>,
+        tier: u8,
+        referral_code: String,
+    ) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+        
+        let referral = &mut ctx.accounts.referral;
+        require!(referral.code == referral_code, ErrorCode::InvalidReferralCode);
+        
+        // Execute normal swap logic (simplified here)
+        let cfg = &ctx.accounts.config;
+        let price = cfg.prices[tier as usize];
+        
+        // Calculate referral bonus (2% of price)
+        let referral_bonus = price
+            .checked_mul(200) // 2% in basis points
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)?;
+        
+        // Update referral stats
+        referral.total_referrals = referral.total_referrals
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
+        referral.total_rewards = referral.total_rewards
+            .checked_add(referral_bonus)
+            .ok_or(ErrorCode::MathOverflow)?;
+        
+        // In full implementation, would:
+        // 1. Execute the full swap logic
+        // 2. Transfer referral bonus to referrer
+        // 3. Emit referral event
+        
+        Ok(())
+    }
+
+    /// Initialize protocol stats account
+    pub fn initialize_stats(ctx: Context<InitializeStats>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        
+        let stats = &mut ctx.accounts.stats;
+        stats.total_burned = 0;
+        stats.burned_by_tier = [0; 5];
+        
+        Ok(())
+    }
+
+    /// New redeem instruction that supports multiple redemptions per user
+    /// Uses a nonce to create unique VestingState PDAs for each redemption
+    pub fn redeem_v2(ctx: Context<RedeemV2>, tier: u8, nonce: u64) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+        
+        let cfg = &ctx.accounts.config;
+        let base_price = cfg.prices[tier as usize];
+        let bonus_state = &ctx.accounts.bonus_state;
+        
+        // Note: We don't check the global redeemed flag for V2
+        // This allows multiple redemptions per user
+        
+        // Verify the user holds at least 1 NFT of this mint
+        require!(ctx.accounts.user_nft.amount >= 1, ErrorCode::NoNft);
+
+        // Calculate immediate payout (base price only)
+        let immediate_payout = base_price;
+
+        // Calculate bonus amount for vesting
+        let bonus_amount = base_price
+            .checked_mul(bonus_state.bonus_bps as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        // Ensure there is enough DEFAI liquidity in escrow for immediate payout
+        require!(
+            ctx.accounts.escrow_defai.amount >= immediate_payout,
+            ErrorCode::NoLiquidity
+        );
+
+        // Transfer NFT back to the escrow vault
+        let cpi_ctx_nft = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_nft.to_account_info(),
+                to: ctx.accounts.vault_nft.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_nft.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        // Transfer immediate payout from escrow to user
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_defai = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai.to_account_info(),
+                to: ctx.accounts.user_defai.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_defai, immediate_payout, 9)?;
+
+        // Note: We don't mark bonus_state as redeemed in V2
+
+        // Create vesting state if there's a bonus
+        if bonus_amount > 0 {
+            let vesting_state = &mut ctx.accounts.vesting_state;
+            vesting_state.user = ctx.accounts.user.key();
+            vesting_state.nft_mint = ctx.accounts.user_nft.mint;
+            vesting_state.total_amount = bonus_amount;
+            vesting_state.claimed_amount = 0;
+            vesting_state.start_ts = Clock::get()?.unix_timestamp;
+            vesting_state.cliff_ts = vesting_state.start_ts + CLIFF_DURATION;
+            vesting_state.end_ts = vesting_state.start_ts + VESTING_DURATION;
+            vesting_state.bump = ctx.bumps.vesting_state;
+            vesting_state.nonce = nonce; // Store the nonce
+        }
+
+        Ok(())
+    }
+
+    /// New claim vested instruction that works with the nonce-based vesting states
+    pub fn claim_vested_v2(ctx: Context<ClaimVestedV2>, nonce: u64) -> Result<()> {
+        let vesting_state = &mut ctx.accounts.vesting_state;
+        let now = Clock::get()?.unix_timestamp;
+
+        // Check if past cliff period
+        require!(now >= vesting_state.cliff_ts, ErrorCode::StillInCliff);
+
+        // Calculate vested amount
+        let vested_amount = if now >= vesting_state.end_ts {
+            // Fully vested
+            vesting_state.total_amount
+        } else {
+            // Partially vested - linear from cliff to end
+            let vesting_duration = vesting_state.end_ts - vesting_state.cliff_ts;
+            let time_vested = now - vesting_state.cliff_ts;
+            
+            vesting_state.total_amount
+                .checked_mul(time_vested as u64)
+                .ok_or(ErrorCode::MathOverflow)?
+                .checked_div(vesting_duration as u64)
+                .ok_or(ErrorCode::MathOverflow)?
+        };
+
+        // Calculate claimable amount
+        let claimable = vested_amount
+            .checked_sub(vesting_state.claimed_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        require!(claimable > 0, ErrorCode::NothingToClaim);
+
+        // Transfer claimable amount
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai.to_account_info(),
+                to: ctx.accounts.user_defai.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx, claimable, 9)?;
+
+        // Update claimed amount
+        vesting_state.claimed_amount = vesting_state.claimed_amount
+            .checked_add(claimable)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        Ok(())
+    }
+
+    /// Admin-only: withdraw arbitrary SPL/Token-2022 tokens from an escrow vault
+
+        pub fn initialize_bonus_state_v3(
+        ctx: Context<InitializeBonusStateV3>,
+        tier: u8,
+    ) -> Result<()> {
+        // Verify admin
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        require!(tier < 5, ErrorCode::InvalidTier);
+        
+        // Generate random bonus within tier range
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        
+        let random_bonus = if bonus_range == 0 {
+            min_bonus
+        } else {
+            let clock = Clock::get()?;
+            let seed = clock.unix_timestamp as u64 
+                ^ ctx.accounts.nft_mint.key().to_bytes()[0] as u64
+                ^ ctx.accounts.token_account.key().to_bytes()[0] as u64;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.redeemed = false;
+        bonus_state.tier = tier;
+        bonus_state.bump = ctx.bumps.bonus_state;
+        bonus_state.nft_mint = ctx.accounts.nft_mint.key();
+        bonus_state.token_account = ctx.accounts.token_account.key();
+
+        Ok(())
+    }
+
+    /// Swap DEFAI for NFT with individual bonus (V3)
+    pub fn swap_defai_for_nft_v3(ctx: Context<SwapDefaiForNftV3>, tier: u8) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+
+        let cfg = &ctx.accounts.config;
+        let price = cfg.prices[tier as usize];
+
+        // Validate user balance and vault liquidity
+        require!(ctx.accounts.user_defai.amount >= price, ErrorCode::InsufficientDefaiTokens);
+        require!(ctx.accounts.vault_nft.amount >= 1, ErrorCode::NoLiquidity);
+
+        // Ensure the treasury associated token account belongs to the configured treasury pubkey
+        require!(ctx.accounts.treasury_defai.owner == cfg.treasury, ErrorCode::InvalidTreasury);
+
+        // Calculate tax and net amounts
+        let current_bps = ctx.accounts.tax_state.current_bps as u64;
+        let tax_amount = price
+            .checked_mul(current_bps)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(ErrorCode::MathOverflow)?;
+        let net_amount = price.checked_sub(tax_amount).ok_or(ErrorCode::MathOverflow)?;
+
+        // Transfer tax to treasury
+        let cpi_ctx_tax = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_defai.to_account_info(),
+                to: ctx.accounts.treasury_defai.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_defai.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_tax, tax_amount, 9)?;
+
+        // Transfer net amount to escrow DEFAI vault
+        let cpi_ctx_net = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_defai.to_account_info(),
+                to: ctx.accounts.escrow_defai.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_defai.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_net, net_amount, 9)?;
+
+        // Generate random bonus within tier range
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        
+        let random_bonus = if bonus_range == 0 {
+            min_bonus
+        } else {
+            let clock = Clock::get()?;
+            let seed = clock.unix_timestamp as u64 
+                ^ ctx.accounts.user.key().to_bytes()[0] as u64
+                ^ ctx.accounts.user_nft.key().to_bytes()[0] as u64;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+
+        // Create BonusStateV3 for this specific NFT
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.redeemed = false;
+        bonus_state.tier = tier;
+        bonus_state.bump = ctx.bumps.bonus_state;
+        bonus_state.nft_mint = ctx.accounts.vault_nft.mint;
+        bonus_state.token_account = ctx.accounts.user_nft.key();
+
+        // Transfer NFT from vault to user
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_nft = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.vault_nft.to_account_info(),
+                to: ctx.accounts.user_nft.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.vault_nft.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        // Increment tax for next swap
+        let new_bps = ctx.accounts.tax_state.current_bps.saturating_add(TAX_INCREMENT_BPS);
+        ctx.accounts.tax_state.current_bps = new_bps.min(TAX_CAP_BPS);
+
+        Ok(())
+    }
+
+    /// Redeem NFT with individual bonus (V3)
+    pub fn redeem_v3(ctx: Context<RedeemV3>, tier: u8, nonce: u64) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+        
+        let cfg = &ctx.accounts.config;
+        let base_price = cfg.prices[tier as usize];
+        let bonus_state = &ctx.accounts.bonus_state;
+        
+        // Verify the user holds at least 1 NFT
+        require!(ctx.accounts.user_nft.amount >= 1, ErrorCode::NoNft);
+        
+        // Verify this is the correct bonus state for this NFT
+        require_keys_eq!(bonus_state.nft_mint, ctx.accounts.user_nft.mint, ErrorCode::InvalidInput);
+        require_keys_eq!(bonus_state.token_account, ctx.accounts.user_nft.key(), ErrorCode::InvalidInput);
+
+        // Calculate immediate payout and bonus
+        let immediate_payout = base_price;
+        let bonus_amount = base_price
+            .checked_mul(bonus_state.bonus_bps as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        // Ensure sufficient liquidity
+        require!(
+            ctx.accounts.escrow_defai.amount >= immediate_payout,
+            ErrorCode::NoLiquidity
+        );
+
+        // Transfer NFT back to vault
+        let cpi_ctx_nft = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_nft.to_account_info(),
+                to: ctx.accounts.vault_nft.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_nft.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        // Transfer immediate payout
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_defai = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai.to_account_info(),
+                to: ctx.accounts.user_defai.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_defai, immediate_payout, 9)?;
+
+        // Create vesting state if there's a bonus
+        if bonus_amount > 0 {
+            let vesting_state = &mut ctx.accounts.vesting_state;
+            vesting_state.user = ctx.accounts.user.key();
+            vesting_state.nft_mint = ctx.accounts.user_nft.mint;
+            vesting_state.total_amount = bonus_amount;
+            vesting_state.claimed_amount = 0;
+            vesting_state.start_ts = Clock::get()?.unix_timestamp;
+            vesting_state.cliff_ts = vesting_state.start_ts + CLIFF_DURATION;
+            vesting_state.end_ts = vesting_state.start_ts + VESTING_DURATION;
+            vesting_state.bump = ctx.bumps.vesting_state;
+            vesting_state.nonce = nonce;
+        }
+
+        Ok(())
+    }
+
+    /// Swap OLD DEFAI tokens for an NFT with NO TAX using V3 system (supports multiple NFTs per tier)
+    pub fn swap_old_defai_for_nft_v3(ctx: Context<SwapOldDefaiForNftV3>, tier: u8, nonce: u64) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+
+        let cfg = &ctx.accounts.config;
+        let price = cfg.prices[tier as usize];
+
+        // Verify user OLD token balance is sufficient
+        require!(ctx.accounts.user_old.amount >= price, ErrorCode::InsufficientOldTokens);
+
+        // Verify escrow has 1+ NFTs
+        require!(ctx.accounts.vault_nft.amount >= 1, ErrorCode::NoLiquidity);
+
+        // Transfer OLD tokens from user to escrow (will sit there permanently)
+        let cpi_ctx_old = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_old.to_account_info(),
+                to: ctx.accounts.burn_old.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        token::transfer(cpi_ctx_old, price)?;
+
+        // Generate random bonus within tier range
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        
+        let random_bonus = if bonus_range == 0 {
+            // Fixed bonus (tier 0)
+            min_bonus
+        } else {
+            // Random bonus within range
+            let clock = Clock::get()?;
+            let seed = clock.unix_timestamp as u64 ^ ctx.accounts.user.key().to_bytes()[0] as u64;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+
+        // Create BonusState for this NFT instance
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.redeemed = false;
+        bonus_state.tier = tier;
+        bonus_state.bump = ctx.bumps.bonus_state;
+        bonus_state.nft_mint = ctx.accounts.vault_nft.mint;
+        bonus_state.token_account = ctx.accounts.user_nft.key();
+
+        // Transfer NFT from vault to user (signed by escrow PDA)
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_nft = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.vault_nft.to_account_info(),
+                to: ctx.accounts.user_nft.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.vault_nft.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        Ok(())
+    }
+
+    // ===== V4 IMPLEMENTATION: Per-User Tax Rates =====
+
+    /// Initialize per-user tax state
+    pub fn initialize_user_tax(ctx: Context<InitializeUserTax>) -> Result<()> {
+        let user_tax = &mut ctx.accounts.user_tax_state;
+        
+        user_tax.user = ctx.accounts.user.key();
+        user_tax.tax_rate_bps = INITIAL_TAX_BPS; // 5% base
+        user_tax.last_swap_timestamp = Clock::get()?.unix_timestamp;
+        user_tax.swap_count = 0;
+        
+        Ok(())
+    }
+
+    /// Reset user's tax rate (callable by the user after 24 hours)
+    pub fn reset_user_tax(ctx: Context<ResetUserTax>) -> Result<()> {
+        let user_tax = &mut ctx.accounts.user_tax_state;
+        let now = Clock::get()?.unix_timestamp;
+        
+        // Check if 24 hours have passed since last swap
+        require!(
+            now >= user_tax.last_swap_timestamp + TAX_RESET_DURATION,
+            ErrorCode::TaxResetTooEarly
+        );
+        
+        // Reset tax to initial rate
+        user_tax.tax_rate_bps = INITIAL_TAX_BPS;
+        user_tax.swap_count = 0;
+        
+        Ok(())
+    }
+
+    /// Swap DEFAI for NFT V4 - with per-user tax rates
+    pub fn swap_defai_for_nft_v4(ctx: Context<SwapDefaiForNftV4>, tier: u8, nonce: u64) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+
+        let cfg = &ctx.accounts.config;
+        let price = cfg.prices[tier as usize];
+        let user_tax = &mut ctx.accounts.user_tax_state;
+        let clock = Clock::get()?;
+
+        // Auto-reset tax if 24 hours passed
+        if clock.unix_timestamp - user_tax.last_swap_timestamp > TAX_RESET_DURATION {
+            user_tax.tax_rate_bps = INITIAL_TAX_BPS;
+            user_tax.swap_count = 0;
+        }
+
+        // Validate user balance and vault liquidity
+        require!(ctx.accounts.user_defai.amount >= price, ErrorCode::InsufficientDefaiTokens);
+        require!(ctx.accounts.vault_nft.amount >= 1, ErrorCode::NoLiquidity);
+
+        // Calculate tax with user's personal rate
+        let tax_amount = price
+            .checked_mul(user_tax.tax_rate_bps as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(ErrorCode::MathOverflow)?;
+        let net_amount = price.checked_sub(tax_amount).ok_or(ErrorCode::MathOverflow)?;
+
+        // Transfer tax to treasury
+        let cpi_ctx_tax = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_defai.to_account_info(),
+                to: ctx.accounts.treasury_defai.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_defai.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_tax, tax_amount, 9)?;
+
+        // Transfer net amount to escrow
+        let cpi_ctx_net = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_defai.to_account_info(),
+                to: ctx.accounts.escrow_defai.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_defai.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_net, net_amount, 9)?;
+
+        // Generate random bonus
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        let random_bonus = if bonus_range == 0 {
+            min_bonus
+        } else {
+            let seed = clock.unix_timestamp as u64 ^ ctx.accounts.user.key().to_bytes()[0] as u64 ^ nonce;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+
+        // Create BonusState
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.redeemed = false;
+        bonus_state.tier = tier;
+        bonus_state.bump = ctx.bumps.bonus_state;
+        bonus_state.nft_mint = ctx.accounts.vault_nft.mint;
+        bonus_state.token_account = ctx.accounts.user_nft.key();
+
+        // Transfer NFT
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_nft = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.vault_nft.to_account_info(),
+                to: ctx.accounts.user_nft.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.vault_nft.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        // Increment user's tax rate
+        user_tax.tax_rate_bps = user_tax.tax_rate_bps.saturating_add(TAX_INCREMENT_BPS).min(TAX_CAP_BPS);
+        user_tax.swap_count += 1;
+        user_tax.last_swap_timestamp = clock.unix_timestamp;
+
+        Ok(())
+    }
+
+    /// Swap OLD DEFAI for NFT V4 - includes user tax tracking
+    pub fn swap_old_defai_for_nft_v4(ctx: Context<SwapOldDefaiForNftV4>, tier: u8, nonce: u64) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+
+        let cfg = &ctx.accounts.config;
+        let price = cfg.prices[tier as usize];
+        let user_tax = &mut ctx.accounts.user_tax_state;
+        let clock = Clock::get()?;
+
+        // Update tax tracking even though OLD DEFAI has no tax
+        if clock.unix_timestamp - user_tax.last_swap_timestamp > TAX_RESET_DURATION {
+            user_tax.tax_rate_bps = INITIAL_TAX_BPS;
+            user_tax.swap_count = 0;
+        }
+
+        // Verify balances
+        require!(ctx.accounts.user_old.amount >= price, ErrorCode::InsufficientOldTokens);
+        require!(ctx.accounts.vault_nft.amount >= 1, ErrorCode::NoLiquidity);
+
+        // Transfer OLD tokens
+        let cpi_ctx_old = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_old.to_account_info(),
+                to: ctx.accounts.burn_old.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        token::transfer(cpi_ctx_old, price)?;
+
+        // Generate random bonus
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        let random_bonus = if bonus_range == 0 {
+            min_bonus
+        } else {
+            let seed = clock.unix_timestamp as u64 ^ ctx.accounts.user.key().to_bytes()[0] as u64 ^ nonce;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+
+        // Create BonusState
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.redeemed = false;
+        bonus_state.tier = tier;
+        bonus_state.bump = ctx.bumps.bonus_state;
+        bonus_state.nft_mint = ctx.accounts.vault_nft.mint;
+        bonus_state.token_account = ctx.accounts.user_nft.key();
+
+        // Transfer NFT
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_nft = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.vault_nft.to_account_info(),
+                to: ctx.accounts.user_nft.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.vault_nft.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        // Update user tax state for consistency
+        user_tax.swap_count += 1;
+        user_tax.last_swap_timestamp = clock.unix_timestamp;
+
+        Ok(())
+    }
+
+    // ===== V5 IMPLEMENTATION: OG NFT Transferability =====
+
+    /// Swap DEFAI for NFT V5 - with transferable bonus states
+    pub fn swap_defai_for_nft_v5(ctx: Context<SwapDefaiForNftV5>, tier: u8) -> Result<()> {
+        msg!("=== SWAP DEFAI FOR NFT V5 START ===");
+        msg!("User: {}", ctx.accounts.user.key());
+        msg!("Tier: {}", tier);
+        
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+        msg!("Protocol checks passed");
+
+        let cfg = &ctx.accounts.config;
+        let price = cfg.prices[tier as usize];
+        let user_tax = &mut ctx.accounts.user_tax_state;
+        let clock = Clock::get()?;
+        
+        msg!("Price for tier {}: {}", tier, price);
+        msg!("User tax rate: {} BPS", user_tax.tax_rate_bps);
+        msg!("Last swap timestamp: {}", user_tax.last_swap_timestamp);
+        msg!("Current timestamp: {}", clock.unix_timestamp);
+
+        // Auto-reset tax if 24 hours passed
+        if clock.unix_timestamp - user_tax.last_swap_timestamp > TAX_RESET_DURATION {
+            msg!("Resetting user tax rate");
+            user_tax.tax_rate_bps = INITIAL_TAX_BPS;
+            user_tax.swap_count = 0;
+        }
+
+        // Validate user balance and vault liquidity
+        msg!("User DEFAI balance: {}", ctx.accounts.user_defai.amount);
+        require!(ctx.accounts.user_defai.amount >= price, ErrorCode::InsufficientDefaiTokens);
+        
+        msg!("NFT vault balance: {}", ctx.accounts.vault_nft.amount);
+        require!(ctx.accounts.vault_nft.amount >= 1, ErrorCode::NoLiquidity);
+        
+        msg!("Balance checks passed");
+
+        // Calculate tax with user's personal rate
+        let tax_amount = price
+            .checked_mul(user_tax.tax_rate_bps as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(ErrorCode::MathOverflow)?;
+        let net_amount = price.checked_sub(tax_amount).ok_or(ErrorCode::MathOverflow)?;
+
+        // Transfer tax to treasury
+        let cpi_ctx_tax = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_defai.to_account_info(),
+                to: ctx.accounts.treasury_defai.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_defai.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_tax, tax_amount, 9)?;
+
+        // Transfer net amount to escrow
+        let cpi_ctx_net = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_defai.to_account_info(),
+                to: ctx.accounts.escrow_defai.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_defai.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_net, net_amount, 9)?;
+
+        // Generate random bonus
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        let random_bonus = if bonus_range == 0 {
+            min_bonus
+        } else {
+            let seed = clock.unix_timestamp as u64 ^ ctx.accounts.user.key().to_bytes()[0] as u64;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+
+        // Create transferable BonusStateV4 (only mint in PDA)
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.mint = ctx.accounts.vault_nft.mint;
+        bonus_state.tier = tier;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.vesting_start = clock.unix_timestamp;
+        bonus_state.vesting_duration = VESTING_DURATION;
+        bonus_state.claimed = false;
+
+        // Transfer NFT
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_nft = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.vault_nft.to_account_info(),
+                to: ctx.accounts.user_nft.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.vault_nft.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        // Increment user's tax rate
+        user_tax.tax_rate_bps = user_tax.tax_rate_bps.saturating_add(TAX_INCREMENT_BPS).min(TAX_CAP_BPS);
+        user_tax.swap_count += 1;
+        user_tax.last_swap_timestamp = clock.unix_timestamp;
+
+        Ok(())
+    }
+
+    /// Swap OLD DEFAI for NFT V5 - with transferable bonus states
+    pub fn swap_old_defai_for_nft_v5(ctx: Context<SwapOldDefaiForNftV5>, tier: u8) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        require!((tier as usize) < 5, ErrorCode::InvalidInput);
+
+        let cfg = &ctx.accounts.config;
+        let price = cfg.prices[tier as usize];
+        let user_tax = &mut ctx.accounts.user_tax_state;
+        let clock = Clock::get()?;
+
+        // Update tax tracking even though OLD DEFAI has no tax
+        if clock.unix_timestamp - user_tax.last_swap_timestamp > TAX_RESET_DURATION {
+            user_tax.tax_rate_bps = INITIAL_TAX_BPS;
+            user_tax.swap_count = 0;
+        }
+
+        // Verify balances
+        require!(ctx.accounts.user_old.amount >= price, ErrorCode::InsufficientOldTokens);
+        require!(ctx.accounts.vault_nft.amount >= 1, ErrorCode::NoLiquidity);
+
+        // Transfer OLD tokens
+        let cpi_ctx_old = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_old.to_account_info(),
+                to: ctx.accounts.burn_old.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        token::transfer(cpi_ctx_old, price)?;
+
+        // Generate random bonus
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        let random_bonus = if bonus_range == 0 {
+            min_bonus
+        } else {
+            let seed = clock.unix_timestamp as u64 ^ ctx.accounts.user.key().to_bytes()[0] as u64;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+
+        // Create transferable BonusStateV4 (only mint in PDA)
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.mint = ctx.accounts.vault_nft.mint;
+        bonus_state.tier = tier;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.vesting_start = clock.unix_timestamp;
+        bonus_state.vesting_duration = VESTING_DURATION;
+        bonus_state.claimed = false;
+
+        // Transfer NFT
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_nft = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.vault_nft.to_account_info(),
+                to: ctx.accounts.user_nft.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.vault_nft.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        // Update user tax state for consistency
+        user_tax.swap_count += 1;
+        user_tax.last_swap_timestamp = clock.unix_timestamp;
+
+        Ok(())
+    }
+
+    /// Redeem NFT V4 - with transferable bonus/vesting states
+    pub fn redeem_v4(ctx: Context<RedeemV4>) -> Result<()> {
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
+        
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        let cfg = &ctx.accounts.config;
+        let base_price = cfg.prices[bonus_state.tier as usize];
+        
+        // Verify not already redeemed
+        require!(!bonus_state.claimed, ErrorCode::NftAlreadyRedeemed);
+        
+        // Verify user holds the NFT
+        require!(ctx.accounts.user_nft.amount >= 1, ErrorCode::NoNft);
+
+        // Calculate immediate payout (base price only)
+        let immediate_payout = base_price;
+
+        // Calculate bonus amount for vesting
+        let bonus_amount = base_price
+            .checked_mul(bonus_state.bonus_bps as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        // Ensure escrow has enough liquidity
+        require!(
+            ctx.accounts.escrow_defai.amount >= immediate_payout,
+            ErrorCode::NoLiquidity
+        );
+
+        // Transfer NFT back to vault
+        let cpi_ctx_nft = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_nft.to_account_info(),
+                to: ctx.accounts.vault_nft.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_nft.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_nft, 1, 0)?;
+
+        // Transfer immediate payout
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx_defai = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai.to_account_info(),
+                to: ctx.accounts.user_defai.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx_defai, immediate_payout, 9)?;
+
+        // Mark as redeemed
+        bonus_state.claimed = true;
+
+        // Create transferable vesting state if there's a bonus
+        if bonus_amount > 0 {
+            let vesting_state = &mut ctx.accounts.vesting_state;
+            let clock = Clock::get()?;
+            
+            vesting_state.mint = ctx.accounts.user_nft.mint;
+            vesting_state.total_amount = bonus_amount;
+            vesting_state.released_amount = 0;
+            vesting_state.start_timestamp = clock.unix_timestamp;
+            vesting_state.end_timestamp = clock.unix_timestamp + VESTING_DURATION;
+            vesting_state.last_claimed_timestamp = clock.unix_timestamp;
+        }
+
+        Ok(())
+    }
+
+    /// Claim vested tokens V4 - requires NFT ownership
+    pub fn claim_vested_v4(ctx: Context<ClaimVestedV4>) -> Result<()> {
+        let vesting_state = &mut ctx.accounts.vesting_state;
+        let clock = Clock::get()?;
+
+        // Verify user owns the NFT
+        require!(ctx.accounts.user_nft_account.amount >= 1, ErrorCode::NoNft);
+
+        // Calculate vested amount
+        let elapsed = clock.unix_timestamp.saturating_sub(vesting_state.start_timestamp);
+        let duration = vesting_state.end_timestamp.saturating_sub(vesting_state.start_timestamp);
+        
+        let vested_amount = if elapsed >= duration {
+            vesting_state.total_amount
+        } else if elapsed < CLIFF_DURATION {
+            0 // Still in cliff period
+        } else {
+            // Linear vesting after cliff
+            let vesting_elapsed = elapsed.saturating_sub(CLIFF_DURATION);
+            let vesting_duration = duration.saturating_sub(CLIFF_DURATION);
+            
+            vesting_state.total_amount
+                .checked_mul(vesting_elapsed as u64)
+                .ok_or(ErrorCode::MathOverflow)?
+                .checked_div(vesting_duration as u64)
+                .ok_or(ErrorCode::MathOverflow)?
+        };
+
+        let claimable = vested_amount.saturating_sub(vesting_state.released_amount);
+        require!(claimable > 0, ErrorCode::NothingToClaim);
+
+        // Update state
+        vesting_state.released_amount = vesting_state.released_amount
+            .checked_add(claimable)
+            .ok_or(ErrorCode::MathOverflow)?;
+        vesting_state.last_claimed_timestamp = clock.unix_timestamp;
+
+        // Transfer vested amount
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai.to_account_info(),
+                to: ctx.accounts.user_defai.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx, claimable, 9)?;
+
+        Ok(())
+    }
+
+    /// Admin function to migrate V3 bonus states to V4 transferable ones
+    pub fn migrate_bonus_state(ctx: Context<MigrateBonusState>, nonce: u64) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        
+        let old_state = &ctx.accounts.old_bonus_state;
+        let new_state = &mut ctx.accounts.new_bonus_state;
+        
+        // Copy data to new state
+        new_state.mint = old_state.nft_mint;
+        new_state.tier = old_state.tier;
+        new_state.bonus_bps = old_state.bonus_bps;
+        new_state.vesting_start = Clock::get()?.unix_timestamp;
+        new_state.vesting_duration = VESTING_DURATION;
+        new_state.claimed = old_state.redeemed;
+        
+        Ok(())
+    }
+
+    // ===== V6 IMPLEMENTATION: pNFT Instructions =====
+
+    /// Initialize the V6 collection configuration
+    pub fn initialize_collection(
+        ctx: Context<InitializeCollection>,
+        tier_names: Vec<String>,
+        tier_symbols: Vec<String>,
+        tier_prices: [u64; 5],
+        tier_supplies: [u16; 5],
+        tier_uri_prefixes: Vec<String>,
+    ) -> Result<()> {
+        let config = &mut ctx.accounts.collection_config;
+        
+        config.authority = ctx.accounts.authority.key();
+        config.collection_mint = ctx.accounts.collection_mint.key();
+        config.treasury = ctx.accounts.treasury.key();
+        config.defai_mint = ctx.accounts.defai_mint.key();
+        config.old_defai_mint = ctx.accounts.old_defai_mint.key();
+        
+        // Initialize arrays with empty strings
+        config.tier_names = Default::default();
+        config.tier_symbols = Default::default();
+        config.tier_uri_prefixes = Default::default();
+        
+        // Copy provided values
+        for i in 0..5 {
+            if i < tier_names.len() {
+                config.tier_names[i] = tier_names[i].clone();
+            }
+            if i < tier_symbols.len() {
+                config.tier_symbols[i] = tier_symbols[i].clone();
+            }
+            if i < tier_uri_prefixes.len() {
+                config.tier_uri_prefixes[i] = tier_uri_prefixes[i].clone();
+            }
+        }
+        
+        config.tier_prices = tier_prices;
+        config.tier_supplies = tier_supplies;
+        config.tier_minted = [0; 5];
+        
+        Ok(())
+    }
+
+    /// Swap DEFAI for a unique pNFT V6
+    pub fn swap_defai_for_pnft_v6(
+        ctx: Context<SwapDefaiForPnftV6>,
+        tier: u8,
+        metadata_uri: String,
+        name: String,
+        symbol: String,
+    ) -> Result<()> {
+        require!(tier < 5, ErrorCode::InvalidTier);
+        
+        let config = &mut ctx.accounts.collection_config;
+        let user_tax = &mut ctx.accounts.user_tax_state;
+        let clock = Clock::get()?;
+        
+        // Check supply
+        require!(
+            config.tier_minted[tier as usize] < config.tier_supplies[tier as usize],
+            ErrorCode::NoLiquidity
+        );
+        
+        // Check and reset tax if 24 hours passed
+        if clock.unix_timestamp - user_tax.last_swap_timestamp > TAX_RESET_DURATION {
+            user_tax.tax_rate_bps = INITIAL_TAX_BPS;
+            user_tax.swap_count = 0;
+        }
+        
+        // Calculate amounts
+        let price = config.tier_prices[tier as usize];
+        let tax_amount = (price as u128)
+            .checked_mul(user_tax.tax_rate_bps as u128)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)? as u64;
+        let net_amount = price.checked_sub(tax_amount).ok_or(ErrorCode::MathOverflow)?;
+        
+        // Transfer tax to treasury
+        let cpi_ctx_tax = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_defai_ata.to_account_info(),
+                to: ctx.accounts.treasury_defai_ata.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_defai_ata.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_tax, tax_amount, 9)?;
+        
+        // Transfer net to escrow
+        let cpi_ctx_net = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.user_defai_ata.to_account_info(),
+                to: ctx.accounts.escrow_defai_ata.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+                mint: ctx.accounts.user_defai_ata.to_account_info()},
+        );
+        token22::transfer_checked(cpi_ctx_net, net_amount, 9)?;
+        
+        // Initialize mint would happen here in production
+        // For now, we assume the mint is pre-created and initialized
+        // TODO: Implement Token-2022 mint initialization
+        
+        // Mint 1 NFT to user would happen here
+        // TODO: Implement Token-2022 minting
+        
+        // TODO: Create Metaplex metadata and master edition
+        // This would use mpl_token_metadata instructions in production
+        
+        // Generate random bonus
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        let random_bonus = if bonus_range == 0 {
+            min_bonus
+        } else {
+            let seed = clock.unix_timestamp as u64 ^ ctx.accounts.user.key().to_bytes()[0] as u64;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+        
+        // Set up bonus state
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.mint = ctx.accounts.nft_mint.key();
+        bonus_state.tier = tier;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.vesting_start = clock.unix_timestamp;
+        bonus_state.vesting_duration = VESTING_DURATION;
+        bonus_state.claimed = false;
+        
+        // Set up vesting state
+        let vesting_state = &mut ctx.accounts.vesting_state;
+        let vesting_amount = (price as u128)
+            .checked_mul(bonus_state.bonus_bps as u128)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)? as u64;
+        
+        vesting_state.mint = ctx.accounts.nft_mint.key();
+        vesting_state.total_amount = vesting_amount;
+        vesting_state.released_amount = 0;
+        vesting_state.start_timestamp = clock.unix_timestamp;
+        vesting_state.end_timestamp = clock.unix_timestamp + VESTING_DURATION;
+        vesting_state.last_claimed_timestamp = clock.unix_timestamp;
+        
+        // Update user tax for next swap
+        user_tax.tax_rate_bps = user_tax.tax_rate_bps
+            .saturating_add(TAX_INCREMENT_BPS)
+            .min(TAX_CAP_BPS);
+        user_tax.swap_count += 1;
+        user_tax.last_swap_timestamp = clock.unix_timestamp;
+        
+        // Increment minted count
+        config.tier_minted[tier as usize] += 1;
+        
+        Ok(())
+    }
+
+    /// Swap OLD DEFAI for a unique pNFT V6
+    pub fn swap_old_defai_for_pnft_v6(
+        ctx: Context<SwapOldDefaiForPnftV6>,
+        tier: u8,
+        metadata_uri: String,
+        name: String,
+        symbol: String,
+    ) -> Result<()> {
+        require!(tier < 5, ErrorCode::InvalidTier);
+        
+        let config = &mut ctx.accounts.collection_config;
+        let user_tax = &mut ctx.accounts.user_tax_state;
+        let clock = Clock::get()?;
+        
+        // Check supply
+        require!(
+            config.tier_minted[tier as usize] < config.tier_supplies[tier as usize],
+            ErrorCode::NoLiquidity
+        );
+        
+        // Check and reset tax tracking (even though OLD DEFAI has no tax)
+        if clock.unix_timestamp - user_tax.last_swap_timestamp > TAX_RESET_DURATION {
+            user_tax.tax_rate_bps = INITIAL_TAX_BPS;
+            user_tax.swap_count = 0;
+        }
+        
+        let price = config.tier_prices[tier as usize];
+        
+        // Verify user has enough OLD tokens
+        require!(ctx.accounts.user_old.amount >= price, ErrorCode::InsufficientOldTokens);
+        
+        // Transfer OLD tokens to burn
+        let cpi_ctx_old = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_old.to_account_info(),
+                to: ctx.accounts.burn_old.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        token::transfer(cpi_ctx_old, price)?;
+        
+        // Initialize mint would happen here in production
+        // For now, we assume the mint is pre-created and initialized
+        // TODO: Implement Token-2022 mint initialization and minting
+        
+        // TODO: Create Metaplex metadata and master edition
+        
+        // Generate random bonus
+        let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
+        let bonus_range = max_bonus - min_bonus;
+        let random_bonus = if bonus_range == 0 {
+            min_bonus
+        } else {
+            let seed = clock.unix_timestamp as u64 ^ ctx.accounts.user.key().to_bytes()[0] as u64;
+            min_bonus + (seed % (bonus_range as u64 + 1)) as u16
+        };
+        
+        // Set up bonus state
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.mint = ctx.accounts.nft_mint.key();
+        bonus_state.tier = tier;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.vesting_start = clock.unix_timestamp;
+        bonus_state.vesting_duration = VESTING_DURATION;
+        bonus_state.claimed = false;
+        
+        // Set up vesting state
+        let vesting_state = &mut ctx.accounts.vesting_state;
+        let vesting_amount = (price as u128)
+            .checked_mul(bonus_state.bonus_bps as u128)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)? as u64;
+        
+        vesting_state.mint = ctx.accounts.nft_mint.key();
+        vesting_state.total_amount = vesting_amount;
+        vesting_state.released_amount = 0;
+        vesting_state.start_timestamp = clock.unix_timestamp;
+        vesting_state.end_timestamp = clock.unix_timestamp + VESTING_DURATION;
+        vesting_state.last_claimed_timestamp = clock.unix_timestamp;
+        
+        // Update user tax state for consistency
+        user_tax.swap_count += 1;
+        user_tax.last_swap_timestamp = clock.unix_timestamp;
+        
+        // Increment minted count
+        config.tier_minted[tier as usize] += 1;
+        
+        Ok(())
+    }
+
+    /// Redeem pNFT V6 - burns the NFT and starts vesting
+    pub fn redeem_v6(ctx: Context<RedeemV6>) -> Result<()> {
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        let vesting_state = &ctx.accounts.vesting_state;
+        let cfg = &ctx.accounts.config;
+        
+        // Get base price from tier
+        let base_price = cfg.prices[bonus_state.tier as usize];
+        
+        // Mark as claimed
+        bonus_state.claimed = true;
+        
+        // Transfer initial amount from escrow (10% of vesting)
+        let initial_amount = vesting_state.total_amount / 10;
+        
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai_ata.to_account_info(),
+                to: ctx.accounts.user_defai_ata.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai_ata.to_account_info()},
+            signer_seeds,
+        );
+        
+        token22::transfer_checked(transfer_ctx, initial_amount, 9)?;
+        
+        // Burn the NFT - in production would use Metaplex burn instruction
+        // TODO: Implement proper NFT burning
+        
+        Ok(())
+    }
+
+    /// Claim vested tokens V6 - requires NFT ownership
+    pub fn claim_vested_v6(ctx: Context<ClaimVestedV6>) -> Result<()> {
+        let vesting_state = &mut ctx.accounts.vesting_state;
+        let clock = Clock::get()?;
+        
+        // Calculate vested amount
+        let elapsed = clock.unix_timestamp.saturating_sub(vesting_state.start_timestamp);
+        let duration = vesting_state.end_timestamp.saturating_sub(vesting_state.start_timestamp);
+        
+        let vested_amount = if elapsed >= duration {
+            vesting_state.total_amount
+        } else if elapsed < CLIFF_DURATION {
+            0 // Still in cliff period
+        } else {
+            // Linear vesting after cliff
+            let vesting_elapsed = elapsed.saturating_sub(CLIFF_DURATION);
+            let vesting_duration = duration.saturating_sub(CLIFF_DURATION);
+            
+            vesting_state.total_amount
+                .checked_mul(vesting_elapsed as u64)
+                .ok_or(ErrorCode::MathOverflow)?
+                .checked_div(vesting_duration as u64)
+                .ok_or(ErrorCode::MathOverflow)?
+        };
+        
+        let claimable = vested_amount.saturating_sub(vesting_state.released_amount);
+        require!(claimable > 0, ErrorCode::NothingToClaim);
+        
+        // Update state
+        vesting_state.released_amount = vesting_state.released_amount
+            .checked_add(claimable)
+            .ok_or(ErrorCode::MathOverflow)?;
+        vesting_state.last_claimed_timestamp = clock.unix_timestamp;
+        
+        // Transfer vested amount
+        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {from: ctx.accounts.escrow_defai_ata.to_account_info(),
+                to: ctx.accounts.user_defai_ata.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.escrow_defai_ata.to_account_info()},
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx, claimable, 9)?;
+        
+        Ok(())
+    }
+}
+
+// Helper function to get bonus range for a tier
+fn get_tier_bonus_range(tier: u8) -> (u16, u16) {
+    match tier {
+        0 => (TIER_0_MIN_BONUS, TIER_0_MAX_BONUS),
+        1 => (TIER_1_MIN_BONUS, TIER_1_MAX_BONUS),
+        2 => (TIER_2_MIN_BONUS, TIER_2_MAX_BONUS),
+        3 => (TIER_3_MIN_BONUS, TIER_3_MAX_BONUS),
+        4 => (TIER_4_MIN_BONUS, TIER_4_MAX_BONUS),
+        _ => (0, 0),
+    }
+}
+
+// Verify Merkle proof
+fn verify_proof(proof: &[[u8; 32]], root: [u8; 32], leaf: [u8; 32]) -> bool {
+    let mut current = leaf;
+    
+    for sibling in proof.iter() {
+        let mut combined = [0u8; 64];
+        
+        // Sort to ensure consistent ordering
+        if current <= *sibling {
+            combined[..32].copy_from_slice(&current);
+            combined[32..].copy_from_slice(sibling);
+        } else {
+            combined[..32].copy_from_slice(sibling);
+            combined[32..].copy_from_slice(&current);
+        }
+        
+        current = anchor_lang::solana_program::keccak::hash(&combined).0;
+    }
+    
+    current == root
+}
+
+// ===== ACCOUNT STRUCTURES =====
+
+#[derive(Accounts)]
+#[instruction(prices: Vec<u64>)]
+pub struct Initialize<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    /// CHECK: legacy SPL-Token mint (read-only)
+    pub old_mint: AccountInfo<'info>,
+    /// CHECK: DEFAI Token-2022 mint (read-only)
+    pub new_mint: AccountInfo<'info>,
+    /// CHECK: Bonus-NFT collection mint (read-only)
+    pub collection: AccountInfo<'info>,
+    /// CHECK: Treasury wallet that will receive tax (read-only)
+    pub treasury: AccountInfo<'info>,
+    /// PDA storing immutable config
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + Config::LEN,
+        seeds = [b"config"],
+        bump,
+    )]
+    pub config: Account<'info, Config>,
+    /// PDA that will hold escrow vaults (created off-chain)
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + Escrow::LEN,
+        seeds = [b"escrow"],
+        bump,
+    )]
+    pub escrow: Account<'info, Escrow>,
+    /// PDA storing the global tax state
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + TaxState::LEN,
+        seeds = [b"tax_state"],
+        bump,
+    )]
+    pub tax_state: Account<'info, TaxState>,
+    pub system_program: Program<'info, System>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct Config {
+    pub admin: Pubkey,
+    pub old_mint: Pubkey,
+    pub new_mint: Pubkey,
+    pub collection: Pubkey,
+    pub treasury: Pubkey,
+    pub prices: [u64; 5],
+    pub paused: bool,
+}
+impl Config {
+    pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + (8 * 5) + 1;
+}
+
+#[account]
+#[derive(Default)]
+pub struct Escrow {
+    pub bump: u8,
+}
+impl Escrow {
+    pub const LEN: usize = 1;
+}
+
+#[account]
+#[derive(Default)]
+pub struct TaxState {
+    /// Current tax expressed in basis points (parts per 10_000)
+    pub current_bps: u16,
+    /// PDA bump for future-proofing / optional signer needs
+    pub bump: u8,
+    /// Last tax reset timestamp
+    pub last_reset_ts: i64,
+}
+impl TaxState {
+    pub const LEN: usize = 2 + 1 + 8;
+}
+
+#[derive(Accounts)]
+pub struct Capture<'info> {
+    /// User performing capture
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User OLD token ATA
+    #[account(
+        mut,
+        constraint = user_old.owner == user.key() @ ErrorCode::Unauthorized,
+        constraint = user_old.mint == config.old_mint @ ErrorCode::InvalidInput,
+    )]
+    pub user_old: Account<'info, TokenAccount>,
+    /// Escrow burn/holding ATA for OLD token
+    #[account(
+        mut,
+        constraint = burn_old.owner == escrow.key() @ ErrorCode::Unauthorized,
+        constraint = burn_old.mint == config.old_mint @ ErrorCode::InvalidInput,
+    )]
+    pub burn_old: Account<'info, TokenAccount>,
+    /// NFT vault holding 1 NFT (Token-2022)
+    #[account(
+        mut,
+        constraint = vault_nft.owner == escrow.key() @ ErrorCode::Unauthorized,
+        constraint = vault_nft.mint == nft_mint.key() @ ErrorCode::InvalidInput,
+    )]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// User destination ATA for NFT (Token-2022)
+    #[account(
+        mut,
+        constraint = user_nft.owner == user.key() @ ErrorCode::Unauthorized,
+        constraint = user_nft.mint == nft_mint.key() @ ErrorCode::InvalidInput,
+    )]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// CHECK: This is safe because we constrain vault_nft.mint to it.
+    pub nft_mint: UncheckedAccount<'info>,
+
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds=[b"escrow"],
+        bump = escrow.bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+
+    /// Bonus state PDA for this NFT mint
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusState::LEN,
+        seeds = [b"bonus", vault_nft.mint.as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusState>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct Redeem<'info> {
+    /// User redeeming the NFT
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User NFT ATA that holds exactly 1 NFT to redeem (Token-2022)
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// Vault account that will receive the NFT back (Token-2022)
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// User destination DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Escrow source DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+
+    /// Bonus state account for this NFT
+    #[account(
+        mut,
+        seeds = [b"bonus", user_nft.mint.as_ref()],
+        bump = bonus_state.bump
+    )]
+    pub bonus_state: Account<'info, BonusState>,
+
+    /// Vesting PDA created during redeem
+    #[account(
+        init,
+        payer = user,
+        space = 8 + VestingState::LEN,
+        seeds = [b"vesting", user.key().as_ref(), user_nft.mint.as_ref()],
+        bump
+    )]
+    pub vesting_state: Account<'info, VestingState>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct SwapDefaiForNft<'info> {
+    /// User performing the swap
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    /// User's DEFAI token account (source) (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// Treasury DEFAI token account (tax destination) (Token-2022)
+    #[account(mut)]
+    pub treasury_defai: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// Escrow DEFAI token account (net amount destination) (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// NFT vault holding NFTs, owned by escrow PDA (Token-2022)
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// User destination NFT token account (Token-2022)
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    pub config: Account<'info, Config>,
+
+    /// Bonus state PDA for this NFT mint
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusState::LEN,
+        seeds = [b"bonus", vault_nft.mint.as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusState>,
+
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+
+    #[account(
+        mut,
+        seeds = [b"tax_state"],
+        bump
+    )]
+    pub tax_state: Account<'info, TaxState>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct AdminWithdraw<'info> {
+    /// Admin performing the withdrawal
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    /// Source vault holding tokens to be withdrawn
+    #[account(mut)]
+    pub source_vault: Account<'info, TokenAccount>,
+    /// Destination token account for the withdrawn tokens
+    #[account(mut)]
+    pub dest: Account<'info, TokenAccount>,
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeWhitelist<'info> {
+    /// Admin performing the initialization
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    /// PDA storing the whitelist state
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + Whitelist::LEN,
+        seeds = [b"whitelist"],
+        bump,
+    )]
+    pub whitelist: Account<'info, Whitelist>,
+    pub system_program: Program<'info, System>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct Whitelist {
+    pub root: [u8; 32],
+    pub claimed_count: u64,
+}
+impl Whitelist {
+    pub const LEN: usize = 32 + 8;
+}
+
+#[derive(Accounts)]
+pub struct CaptureOgWhitelisted<'info> {
+    /// User performing the capture
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User OLD token ATA
+    #[account(mut)]
+    pub user_old: Account<'info, TokenAccount>,
+    /// Escrow burn/holding ATA for OLD token
+    #[account(mut)]
+    pub burn_old: Account<'info, TokenAccount>,
+    /// NFT vault holding 1 NFT (Token-2022)
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// User destination ATA for NFT (Token-2022)
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds=[b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+
+    /// Whitelist state
+    #[account(
+        mut,
+        seeds = [b"whitelist"],
+        bump,
+    )]
+    pub whitelist: Account<'info, Whitelist>,
+
+    /// PDA that marks this user as having claimed
+    #[account(
+        init,
+        payer = user,
+        space = 8 + UserClaim::LEN,
+        seeds = [b"user_claim", user.key().as_ref()],
+        bump
+    )]
+    pub user_claim: Account<'info, UserClaim>,
+
+    /// Bonus state PDA for this NFT mint
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusState::LEN,
+        seeds = [b"bonus", vault_nft.mint.as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusState>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct UserClaim {
+    pub claimed: bool,
+    pub user: Pubkey,
+    pub claimed_at: i64,
+}
+impl UserClaim {
+    pub const LEN: usize = 1 + 32 + 8;
+}
+
+#[derive(Accounts)]
+pub struct InitializeBonusState<'info> {
+    /// Admin initializing the bonus state
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    /// Config to verify admin
+    pub config: Account<'info, Config>,
+    /// NFT mint public key
+    /// CHECK: Just the mint address
+    pub nft_mint: AccountInfo<'info>,
+    /// Bonus state PDA for this NFT mint
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + BonusState::LEN,
+        seeds = [b"bonus", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusState>,
+    pub system_program: Program<'info, System>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct BonusState {
+    pub bonus_bps: u16,
+    pub redeemed: bool,
+    pub tier: u8,
+    pub bump: u8,
+}
+impl BonusState {
+    pub const LEN: usize = 2 + 1 + 1 + 1;
+}
+
+#[derive(Accounts)]
+pub struct ClaimVested<'info> {
+    /// User claiming vested tokens
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User destination DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Escrow source DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    pub config: Account<'info, Config>,
+    pub escrow: Account<'info, Escrow>,
+    /// Vesting state PDA
+    #[account(
+        mut,
+        seeds = [b"vesting", user.key().as_ref(), nft_mint.key().as_ref()],
+        bump = vesting_state.bump
+    )]
+    pub vesting_state: Account<'info, VestingState>,
+    /// NFT mint used in seeds
+    /// CHECK: Just for deriving PDA
+    pub nft_mint: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct VestingState {
+    pub user: Pubkey,
+    pub nft_mint: Pubkey,
+    pub total_amount: u64,
+    pub claimed_amount: u64,
+    pub start_ts: i64,
+    pub cliff_ts: i64,
+    pub end_ts: i64,
+    pub bump: u8,
+}
+impl VestingState {
+    pub const LEN: usize = 32 + 32 + 8 + 8 + 8 + 8 + 8 + 1;
+}
+
+#[derive(Accounts)]
+pub struct ResetTax<'info> {
+    /// Anyone can call this function
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    /// Tax state PDA to reset
+    #[account(
+        mut,
+        seeds = [b"tax_state"],
+        bump = tax_state.bump
+    )]
+    pub tax_state: Account<'info, TaxState>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateConfig<'info> {
+    /// Admin performing the update
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    
+    /// Config PDA to update
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, Config>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateMetadata<'info> {
+    /// Admin performing the update
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    
+    /// Config PDA to update
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, Config>,
+}
+
+#[derive(Accounts)]
+pub struct AccelerateVesting<'info> {
+    /// Admin performing the acceleration
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    
+    /// Config PDA to verify admin
+    pub config: Account<'info, Config>,
+    
+    /// Vesting state to accelerate
+    #[account(mut)]
+    pub vesting_state: Account<'info, VestingState>,
+}
+
+#[derive(Accounts)]
+pub struct BatchRedeem<'info> {
+    /// User performing the batch redeem
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User destination DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Escrow DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    pub system_program: Program<'info, System>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct BatchClaimVested<'info> {
+    /// User performing the batch claim
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User destination DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Escrow DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    /// Vesting state to claim from (example - in full impl would be multiple)
+    #[account(mut)]
+    pub vesting_state: Account<'info, VestingState>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct BurnNft<'info> {
+    /// User performing the burn
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User NFT ATA that holds exactly 1 NFT to burn (Token-2022)
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// NFT vault to receive burned NFT (Token-2022)
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// User destination DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Escrow DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    /// Bonus state for the NFT
+    #[account(
+        seeds = [b"bonus", user_nft.mint.as_ref()],
+        bump = bonus_state.bump
+    )]
+    pub bonus_state: Account<'info, BonusState>,
+    /// Stats account to update burn stats
+    #[account(
+        mut,
+        seeds = [b"stats"],
+        bump
+    )]
+    pub stats: Account<'info, Stats>,
+    pub system_program: Program<'info, System>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct Stats {
+    pub total_burned: u64,
+    pub burned_by_tier: [u64; 5],
+}
+impl Stats {
+    pub const LEN: usize = 8 + (8 * 5);
+}
+
+#[derive(Accounts)]
+pub struct ListNft<'info> {
+    /// User listing the NFT
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User NFT ATA
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// Listing PDA for this NFT
+    #[account(
+        init,
+        payer = user,
+        space = 8 + Listing::LEN,
+        seeds = [b"listing", user_nft.mint.as_ref()],
+        bump
+    )]
+    pub listing: Account<'info, Listing>,
+    pub config: Account<'info, Config>,
+    pub system_program: Program<'info, System>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct Listing {
+    pub seller: Pubkey,
+    pub nft_mint: Pubkey,
+    pub price: u64,
+    pub active: bool,
+    pub created_at: i64,
+    pub bump: u8,
+}
+impl Listing {
+    pub const LEN: usize = 32 + 32 + 8 + 1 + 8 + 1;
+}
+
+#[derive(Accounts)]
+pub struct BuyListedNft<'info> {
+    /// Buyer
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    /// Seller (derived from listing)
+    /// CHECK: Validated against listing
+    pub seller: AccountInfo<'info>,
+    /// Buyer's DEFAI token account (Token-2022)
+    #[account(mut)]
+    pub buyer_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Seller's DEFAI token account (Token-2022)
+    #[account(mut)]
+    pub seller_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Treasury DEFAI token account (Token-2022)
+    #[account(mut)]
+    pub treasury_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Escrow DEFAI token account (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Seller's NFT ATA (Token-2022)
+    #[account(mut)]
+    pub seller_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// Buyer's NFT ATA (Token-2022)
+    #[account(mut)]
+    pub buyer_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// NFT mint for deriving user_nft correctly
+    /// CHECK: Used for deriving listing PDA
+    pub user_nft: AccountInfo<'info>,
+    /// Listing PDA
+    #[account(
+        mut,
+        seeds = [b"listing", seller_nft.mint.as_ref()],
+        bump = listing.bump
+    )]
+    pub listing: Account<'info, Listing>,
+    pub config: Account<'info, Config>,
+    pub system_program: Program<'info, System>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct CancelListing<'info> {
+    /// User canceling the listing
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User's NFT ATA
+    /// CHECK: Just for deriving listing PDA
+    pub user_nft: AccountInfo<'info>,
+    /// Listing PDA to cancel
+    #[account(
+        mut,
+        seeds = [b"listing", user_nft.key().as_ref()],
+        bump = listing.bump
+    )]
+    pub listing: Account<'info, Listing>,
+    pub config: Account<'info, Config>,
+}
+
+#[derive(Accounts)]
+#[instruction(code: String)]
+pub struct RegisterReferral<'info> {
+    /// User registering the referral code
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// Referral PDA to create
+    #[account(
+        init,
+        payer = user,
+        space = 8 + Referral::LEN,
+        seeds = [b"referral", code.as_bytes()],
+        bump
+    )]
+    pub referral: Account<'info, Referral>,
+    pub system_program: Program<'info, System>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct Referral {
+    pub referrer: Pubkey,
+    pub code: String,
+    pub total_referrals: u64,
+    pub total_rewards: u64,
+    pub created_at: i64,
+    pub bump: u8,
+}
+impl Referral {
+    pub const LEN: usize = 32 + 32 + 8 + 8 + 8 + 1;
+}
+
+#[derive(Accounts)]
+#[instruction(tier: u8, referral_code: String)]
+pub struct SwapWithReferral<'info> {
+    /// User performing the swap
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User's DEFAI token account (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Treasury DEFAI token account (Token-2022)
+    #[account(mut)]
+    pub treasury_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Escrow DEFAI token account (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// NFT vault (Token-2022)
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// User NFT destination (Token-2022)
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    /// Referral account
+    #[account(
+        mut,
+        seeds = [b"referral", referral_code.as_bytes()],
+        bump = referral.bump
+    )]
+    pub referral: Account<'info, Referral>,
+    pub system_program: Program<'info, System>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeStats<'info> {
+    /// Admin initializing the stats
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    pub config: Account<'info, Config>,
+    /// Stats account to initialize
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + Stats::LEN,
+        seeds = [b"stats"],
+        bump
+    )]
+    pub stats: Account<'info, Stats>,
+    pub system_program: Program<'info, System>,
+}
+
+// V2 Structs for Multiple Redemptions Support
+
+#[derive(Accounts)]
+#[instruction(tier: u8, nonce: u64)]
+pub struct RedeemV2<'info> {
+    /// User redeeming the NFT
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User NFT ATA that holds exactly 1 NFT to redeem (Token-2022)
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// Vault account that will receive the NFT back (Token-2022)
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// User destination DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Escrow source DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+
+    /// Bonus state account for this NFT (read-only in V2)
+    #[account(
+        seeds = [b"bonus", user_nft.mint.as_ref()],
+        bump = bonus_state.bump
+    )]
+    pub bonus_state: Account<'info, BonusState>,
+
+    /// Vesting PDA created during redeem - now includes nonce in seeds
+    #[account(
+        init,
+        payer = user,
+        space = 8 + VestingStateV2::LEN,
+        seeds = [b"vesting_v2", user.key().as_ref(), user_nft.mint.as_ref(), &nonce.to_le_bytes()],
+        bump
+    )]
+    pub vesting_state: Account<'info, VestingStateV2>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+#[instruction(nonce: u64)]
+pub struct ClaimVestedV2<'info> {
+    /// User claiming vested tokens
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User destination DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Escrow source DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    pub config: Account<'info, Config>,
+    pub escrow: Account<'info, Escrow>,
+    /// Vesting state PDA with nonce
+    #[account(
+        mut,
+        seeds = [b"vesting_v2", user.key().as_ref(), nft_mint.key().as_ref(), &nonce.to_le_bytes()],
+        bump = vesting_state.bump
+    )]
+    pub vesting_state: Account<'info, VestingStateV2>,
+    /// NFT mint used in seeds
+    /// CHECK: Just for deriving PDA
+    pub nft_mint: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct VestingStateV2 {
+    pub user: Pubkey,
+    pub nft_mint: Pubkey,
+    pub total_amount: u64,
+    pub claimed_amount: u64,
+    pub start_ts: i64,
+    pub cliff_ts: i64,
+    pub end_ts: i64,
+    pub bump: u8,
+    pub nonce: u64, // New field to make each vesting unique
+}
+impl VestingStateV2 {
+    pub const LEN: usize = 32 + 32 + 8 + 8 + 8 + 8 + 8 + 1 + 8; // Added 8 bytes for nonce
+}
+
+// V3 Account Structures for Individual NFT Bonuses
+
+#[account]
+#[derive(Default)]
+pub struct BonusStateV3 {
+    pub bonus_bps: u16,
+    pub redeemed: bool,
+    pub tier: u8,
+    pub bump: u8,
+    pub nft_mint: Pubkey,
+    pub token_account: Pubkey, // Unique token account for this specific NFT
+}
+impl BonusStateV3 {
+    pub const LEN: usize = 2 + 1 + 1 + 1 + 32 + 32;
+}
+
+#[derive(Accounts)]
+pub struct InitializeBonusStateV3<'info> {
+    /// Admin initializing the bonus state
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    /// Config to verify admin
+    pub config: Account<'info, Config>,
+    /// NFT mint public key
+    /// CHECK: Just the mint address
+    pub nft_mint: AccountInfo<'info>,
+    /// Token account that will hold this specific NFT
+    /// CHECK: The specific token account
+    pub token_account: AccountInfo<'info>,
+    /// Bonus state PDA for this specific NFT instance
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + BonusStateV3::LEN,
+        seeds = [b"bonus_v3", nft_mint.key().as_ref(), token_account.key().as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusStateV3>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SwapDefaiForNftV3<'info> {
+    /// User performing the swap
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    /// User's DEFAI token account (source) (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// Treasury DEFAI token account (tax destination) (Token-2022)
+    #[account(mut)]
+    pub treasury_defai: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// Escrow DEFAI token account (net amount destination) (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// NFT vault holding NFTs, owned by escrow PDA (Token-2022)
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// User destination NFT token account (Token-2022)
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    pub config: Account<'info, Config>,
+
+    /// Bonus state PDA for this specific NFT instance
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusStateV3::LEN,
+        seeds = [b"bonus_v3", vault_nft.mint.as_ref(), user_nft.key().as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusStateV3>,
+
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+
+    #[account(
+        mut,
+        seeds = [b"tax_state"],
+        bump
+    )]
+    pub tax_state: Account<'info, TaxState>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+#[instruction(tier: u8, nonce: u64)]
+pub struct RedeemV3<'info> {
+    /// User redeeming the NFT
+    #[account(mut)]
+    pub user: Signer<'info>,
+    /// User NFT ATA that holds exactly 1 NFT to redeem (Token-2022)
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    /// Vault account that will receive the NFT back (Token-2022)
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// User destination DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    /// Escrow source DEFAI ATA (Token-2022)
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+
+    /// Bonus state account for this specific NFT instance
+    #[account(
+        seeds = [b"bonus_v3", user_nft.mint.as_ref(), user_nft.key().as_ref()],
+        bump = bonus_state.bump
+    )]
+    pub bonus_state: Account<'info, BonusStateV3>,
+
+    /// Vesting PDA created during redeem - now includes nonce in seeds
+    #[account(
+        init,
+        payer = user,
+        space = 8 + VestingStateV2::LEN,
+        seeds = [b"vesting_v2", user.key().as_ref(), user_nft.mint.as_ref(), &nonce.to_le_bytes()],
+        bump
+    )]
+    pub vesting_state: Account<'info, VestingStateV2>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+#[instruction(tier: u8, nonce: u64)]
+pub struct SwapOldDefaiForNftV3<'info> {
+    /// User performing the swap
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    /// User's OLD DEFAI token account (source) (Token Program v1)
+    #[account(mut)]
+    pub user_old: Account<'info, TokenAccount>,
+
+    /// Escrow burn/holding ATA for OLD token
+    #[account(mut)]
+    pub burn_old: Account<'info, TokenAccount>,
+
+    /// NFT vault holding NFTs, owned by escrow PDA (Token-2022)
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    /// User destination NFT token account (Token-2022)
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+
+    pub config: Account<'info, Config>,
+
+    /// Bonus state PDA for this specific NFT instance
+    /// Using init to create unique bonus state per NFT
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusStateV3::LEN,
+        seeds = [b"bonus_v3", vault_nft.mint.as_ref(), vault_nft.key().as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusStateV3>,
+
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+// V4 Account Structures - Per-User Tax Rates
+
+#[account]
+#[derive(Default)]
+pub struct UserTaxState {
+    pub user: Pubkey,
+    pub tax_rate_bps: u16,
+    pub last_swap_timestamp: i64,
+    pub swap_count: u32,
+}
+impl UserTaxState {
+    pub const LEN: usize = 32 + 2 + 8 + 4;
+}
+
+#[derive(Accounts)]
+pub struct InitializeUserTax<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    #[account(
+        init,
+        payer = user,
+        space = 8 + UserTaxState::LEN,
+        seeds = [b"user_tax", user.key().as_ref()],
+        bump
+    )]
+    pub user_tax_state: Account<'info, UserTaxState>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ResetUserTax<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    #[account(
+        mut,
+        seeds = [b"user_tax", user.key().as_ref()],
+        bump
+    )]
+    pub user_tax_state: Account<'info, UserTaxState>,
+}
+
+#[derive(Accounts)]
+#[instruction(tier: u8, nonce: u64)]
+pub struct SwapDefaiForNftV4<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub treasury_defai: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    
+    pub config: Account<'info, Config>,
+    
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusStateV3::LEN,
+        seeds = [b"bonus_v3", vault_nft.mint.as_ref(), user.key().as_ref(), &nonce.to_le_bytes()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusStateV3>,
+    
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    
+    #[account(
+        mut,
+        seeds = [b"user_tax", user.key().as_ref()],
+        bump
+    )]
+    pub user_tax_state: Account<'info, UserTaxState>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+#[instruction(tier: u8, nonce: u64)]
+pub struct SwapOldDefaiForNftV4<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    #[account(mut)]
+    pub user_old: Account<'info, TokenAccount>,
+    
+    #[account(mut)]
+    pub burn_old: Account<'info, TokenAccount>,
+    
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    
+    pub config: Account<'info, Config>,
+    
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusStateV3::LEN,
+        seeds = [b"bonus_v3", vault_nft.mint.as_ref(), user.key().as_ref(), &nonce.to_le_bytes()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusStateV3>,
+    
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    
+    #[account(
+        mut,
+        seeds = [b"user_tax", user.key().as_ref()],
+        bump
+    )]
+    pub user_tax_state: Account<'info, UserTaxState>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+// V5 Account Structures - Transferable NFTs
+
+#[account]
+#[derive(Default)]
+pub struct BonusStateV4 {
+    pub mint: Pubkey,
+    pub tier: u8,
+    pub bonus_bps: u16,
+    pub vesting_start: i64,
+    pub vesting_duration: i64,
+    pub claimed: bool,
+}
+impl BonusStateV4 {
+    pub const LEN: usize = 32 + 1 + 2 + 8 + 8 + 1;
+}
+
+#[account]
+#[derive(Default)]
+pub struct VestingStateV4 {
+    pub mint: Pubkey,
+    pub total_amount: u64,
+    pub released_amount: u64,
+    pub start_timestamp: i64,
+    pub end_timestamp: i64,
+    pub last_claimed_timestamp: i64,
+}
+impl VestingStateV4 {
+    pub const LEN: usize = 32 + 8 + 8 + 8 + 8 + 8;
+}
+
+#[derive(Accounts)]
+pub struct SwapDefaiForNftV5<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub treasury_defai: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    
+    pub config: Account<'info, Config>,
+    
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusStateV4::LEN,
+        seeds = [b"bonus_v4", vault_nft.mint.as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusStateV4>,
+    
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    
+    #[account(
+        mut,
+        seeds = [b"user_tax", user.key().as_ref()],
+        bump
+    )]
+    pub user_tax_state: Account<'info, UserTaxState>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct SwapOldDefaiForNftV5<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    #[account(mut)]
+    pub user_old: Account<'info, TokenAccount>,
+    
+    #[account(mut)]
+    pub burn_old: Account<'info, TokenAccount>,
+    
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    
+    pub config: Account<'info, Config>,
+    
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusStateV4::LEN,
+        seeds = [b"bonus_v4", vault_nft.mint.as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusStateV4>,
+    
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    
+    #[account(
+        mut,
+        seeds = [b"user_tax", user.key().as_ref()],
+        bump
+    )]
+    pub user_tax_state: Account<'info, UserTaxState>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct RedeemV4<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    #[account(mut)]
+    pub user_nft: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub vault_nft: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    
+    pub config: Account<'info, Config>,
+    
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    
+    #[account(
+        mut,
+        seeds = [b"bonus_v4", user_nft.mint.as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusStateV4>,
+    
+    #[account(
+        init,
+        payer = user,
+        space = 8 + VestingStateV4::LEN,
+        seeds = [b"vesting_v4", user_nft.mint.as_ref()],
+        bump
+    )]
+    pub vesting_state: Account<'info, VestingStateV4>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimVestedV4<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    /// User must own the NFT to claim vesting
+    #[account()]
+    pub user_nft_account: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub user_defai: InterfaceAccount<'info, TokenAccount2022>,
+    
+    #[account(mut)]
+    pub escrow_defai: InterfaceAccount<'info, TokenAccount2022>,
+    
+    pub config: Account<'info, Config>,
+    
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    
+    #[account(
+        mut,
+        seeds = [b"vesting_v4", user_nft_account.mint.as_ref()],
+        bump
+    )]
+    pub vesting_state: Account<'info, VestingStateV4>,
+    
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+#[instruction(nonce: u64)]
+pub struct MigrateBonusState<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    
+    pub config: Account<'info, Config>,
+    
+    /// Old bonus state to migrate from
+    #[account(
+        seeds = [b"bonus_v3", nft_mint.key().as_ref(), user.key().as_ref(), &nonce.to_le_bytes()],
+        bump
+    )]
+    pub old_bonus_state: Account<'info, BonusStateV3>,
+    
+    /// New bonus state to migrate to
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + BonusStateV4::LEN,
+        seeds = [b"bonus_v4", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub new_bonus_state: Account<'info, BonusStateV4>,
+    
+    /// CHECK: NFT mint
+    pub nft_mint: AccountInfo<'info>,
+    
+    /// CHECK: Original user
+    pub user: AccountInfo<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+// V6 Account Structures - pNFTs
+
+#[account]
+#[derive(Default)]
+pub struct CollectionConfig {
+    pub authority: Pubkey,
+    pub collection_mint: Pubkey,
+    pub treasury: Pubkey,
+    pub defai_mint: Pubkey,
+    pub old_defai_mint: Pubkey,
+    pub tier_names: [String; 5],
+    pub tier_symbols: [String; 5],
+    pub tier_prices: [u64; 5],
+    pub tier_supplies: [u16; 5],
+    pub tier_minted: [u16; 5],
+    pub tier_uri_prefixes: [String; 5],
+}
+impl CollectionConfig {
+    pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + (64 * 5) + (10 * 5) + (8 * 5) + (2 * 5) + (2 * 5) + (200 * 5);
+}
+
+#[account]
+#[derive(Default)]
+pub struct BonusStateV6 {
+    pub mint: Pubkey,
+    pub tier: u8,
+    pub bonus_bps: u16,
+    pub vesting_start: i64,
+    pub vesting_duration: i64,
+    pub claimed: bool,
+}
+impl BonusStateV6 {
+    pub const LEN: usize = 32 + 1 + 2 + 8 + 8 + 1;
+}
+
+#[account]
+#[derive(Default)]
+pub struct VestingStateV6 {
+    pub mint: Pubkey,
+    pub total_amount: u64,
+    pub released_amount: u64,
+    pub start_timestamp: i64,
+    pub end_timestamp: i64,
+    pub last_claimed_timestamp: i64,
+}
+impl VestingStateV6 {
+    pub const LEN: usize = 32 + 8 + 8 + 8 + 8 + 8;
+}
+
+#[derive(Accounts)]
+pub struct InitializeCollection<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    /// CHECK: Collection mint
+    pub collection_mint: AccountInfo<'info>,
+    
+    /// CHECK: Treasury
+    pub treasury: AccountInfo<'info>,
+    
+    /// CHECK: DEFAI mint
+    pub defai_mint: AccountInfo<'info>,
+    
+    /// CHECK: Old DEFAI mint
+    pub old_defai_mint: AccountInfo<'info>,
+    
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + CollectionConfig::LEN,
+        seeds = [b"collection_config"],
+        bump
+    )]
+    pub collection_config: Account<'info, CollectionConfig>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SwapDefaiForPnftV6<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    /// User's DEFAI ATA
+    #[account(mut)]
+    pub user_defai_ata: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    
+    /// Treasury DEFAI ATA
+    #[account(mut)]
+    pub treasury_defai_ata: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    
+    /// Escrow DEFAI ATA
+    #[account(mut)]
+    pub escrow_defai_ata: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    
+    /// Config for V3 compatibility
+    pub config: Account<'info, Config>,
+    
+    /// Collection config
+    #[account(mut)]
+    pub collection_config: Box<Account<'info, CollectionConfig>>,
+    
+    /// CHECK: NFT mint to be created
+    pub nft_mint: AccountInfo<'info>,
+    
+    /// NFT token account
+    #[account(mut)]
+    pub nft_token_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    
+    /// Bonus state for this unique NFT
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusStateV6::LEN,
+        seeds = [b"bonus_v6", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub bonus_state: Box<Account<'info, BonusStateV6>>,
+    
+    /// Vesting state for this unique NFT
+    #[account(
+        init,
+        payer = user,
+        space = 8 + VestingStateV6::LEN,
+        seeds = [b"vesting_v6", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub vesting_state: Box<Account<'info, VestingStateV6>>,
+    
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    
+    #[account(
+        mut,
+        seeds = [b"user_tax", user.key().as_ref()],
+        bump
+    )]
+    pub user_tax_state: Box<Account<'info, UserTaxState>>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct SwapOldDefaiForPnftV6<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    /// User's OLD DEFAI account
+    #[account(mut)]
+    pub user_old: Box<Account<'info, TokenAccount>>,
+    
+    /// Burn account for OLD DEFAI
+    #[account(mut)]
+    pub burn_old: Box<Account<'info, TokenAccount>>,
+    
+    /// Config for V3 compatibility
+    pub config: Account<'info, Config>,
+    
+    /// Collection config
+    #[account(mut)]
+    pub collection_config: Box<Account<'info, CollectionConfig>>,
+    
+    /// CHECK: NFT mint to be created
+    pub nft_mint: AccountInfo<'info>,
+    
+    /// NFT token account
+    #[account(mut)]
+    pub nft_token_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    
+    /// Bonus state for this unique NFT
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusStateV6::LEN,
+        seeds = [b"bonus_v6", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub bonus_state: Box<Account<'info, BonusStateV6>>,
+    
+    /// Vesting state for this unique NFT
+    #[account(
+        init,
+        payer = user,
+        space = 8 + VestingStateV6::LEN,
+        seeds = [b"vesting_v6", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub vesting_state: Box<Account<'info, VestingStateV6>>,
+    
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    
+    #[account(
+        mut,
+        seeds = [b"user_tax", user.key().as_ref()],
+        bump
+    )]
+    pub user_tax_state: Box<Account<'info, UserTaxState>>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct RedeemV6<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    /// CHECK: NFT mint
+    pub nft_mint: AccountInfo<'info>,
+    
+    /// User's NFT token account
+    #[account(mut)]
+    pub user_nft_ata: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// User's DEFAI ATA
+    #[account(mut)]
+    pub user_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// Escrow DEFAI ATA
+    #[account(mut)]
+    pub escrow_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
+    
+    pub config: Account<'info, Config>,
+    
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    
+    #[account(
+        mut,
+        seeds = [b"bonus_v6", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub bonus_state: Account<'info, BonusStateV6>,
+    
+    #[account(
+        seeds = [b"vesting_v6", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub vesting_state: Account<'info, VestingStateV6>,
+    
+    pub system_program: Program<'info, System>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimVestedV6<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    /// CHECK: NFT mint
+    pub nft_mint: AccountInfo<'info>,
+    
+    /// User must own the NFT to claim
+    #[account()]
+    pub user_nft_ata: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// User's DEFAI ATA
+    #[account(mut)]
+    pub user_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
+    
+    /// Escrow DEFAI ATA
+    #[account(mut)]
+    pub escrow_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
+    
+    pub config: Account<'info, Config>,
+    
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    
+    #[account(
+        mut,
+        seeds = [b"vesting_v6", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub vesting_state: Account<'info, VestingStateV6>,
+    
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[error_code]
+pub enum ErrorCode {
+    #[msg("Insufficient OLD tokens provided.")]
+    InsufficientOldTokens,
+    #[msg("Insufficient DEFAI tokens provided.")]
+    InsufficientDefaiTokens,
+    #[msg("Escrow is out of NFTs.")]
+    NoLiquidity,
+    #[msg("Invalid NFT collection.")]
+    InvalidCollection,
+    #[msg("Overflow in maths operation.")]
+    MathOverflow,
+    #[msg("NFT already redeemed.")]
+    NftAlreadyRedeemed,
+    #[msg("User does not hold the NFT.")]
+    NoNft,
+    #[msg("Invalid tier or input provided.")]
+    InvalidInput,
+    #[msg("Treasury token account does not match config.")]
+    InvalidTreasury,
+    #[msg("Unauthorized access.")]
+    Unauthorized,
+    #[msg("Invalid tier provided.")]
+    InvalidTier,
+    #[msg("Already claimed.")]
+    AlreadyClaimed,
+    #[msg("Invalid Merkle proof.")]
+    InvalidMerkleProof,
+    #[msg("Still in cliff period.")]
+    StillInCliff,
+    #[msg("Nothing to claim.")]
+    NothingToClaim,
+    #[msg("Tax reset too early.")]
+    TaxResetTooEarly,
+    #[msg("Already paused.")]
+    AlreadyPaused,
+    #[msg("Not paused.")]
+    NotPaused,
+    #[msg("Protocol paused.")]
+    ProtocolPaused,
+    #[msg("Listing not active.")]
+    ListingNotActive,
+    #[msg("Invalid referral code.")]
+    InvalidReferralCode,
+    #[msg("Invalid mint.")]
+    InvalidMint,
+}

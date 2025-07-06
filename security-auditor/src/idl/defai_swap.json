@@ -1,0 +1,1084 @@
+{
+  "version": "0.1.0",
+  "name": "defai_swap",
+  "instructions": [
+    {
+      "name": "initialize",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "oldMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "newMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "collection",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "treasury",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "config",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "escrow",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "taxState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "prices",
+          "type": {
+            "vec": "u64"
+          }
+        }
+      ]
+    },
+    {
+      "name": "updatePrices",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "config",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "prices",
+          "type": {
+            "vec": "u64"
+          }
+        }
+      ]
+    },
+    {
+      "name": "updateTreasury",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "config",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "newTreasury",
+          "type": "publicKey"
+        }
+      ]
+    },
+    {
+      "name": "pause",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "config",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "unpause",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "config",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initializeWhitelist",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "whitelist",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initializeUserTax",
+      "accounts": [
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "userTaxState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "resetUserTax",
+      "accounts": [
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "userTaxState",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initializeCollection",
+      "accounts": [
+        {
+          "name": "authority",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "collectionMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "treasury",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "defaiMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "oldDefaiMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "collectionConfig",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "tierNames",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "tierSymbols",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "tierPrices",
+          "type": {
+            "array": [
+              "u64",
+              5
+            ]
+          }
+        },
+        {
+          "name": "tierSupplies",
+          "type": {
+            "array": [
+              "u16",
+              5
+            ]
+          }
+        },
+        {
+          "name": "tierUriPrefixes",
+          "type": {
+            "vec": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "swapDefaiForPnftV6",
+      "accounts": [
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "userDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "treasuryDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "escrowDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "defaiMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "collectionConfig",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "nftMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "nftTokenAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "bonusState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "vestingState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "escrow",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "userTaxState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram2022",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "tier",
+          "type": "u8"
+        },
+        {
+          "name": "metadataUri",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "swapOldDefaiForPnftV6",
+      "accounts": [
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "userOld",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "burnOld",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "collectionConfig",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "nftMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "nftTokenAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "bonusState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "vestingState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "escrow",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "userTaxState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram2022",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "tier",
+          "type": "u8"
+        },
+        {
+          "name": "metadataUri",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "redeemV6",
+      "accounts": [
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "nftMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "userNftAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "userDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "escrowDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "defaiMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "escrow",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "bonusState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "vestingState",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram2022",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimVestedV6",
+      "accounts": [
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "nftMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "userNftAta",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "userDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "escrowDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "defaiMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "escrow",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "vestingState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram2022",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "adminWithdraw",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "sourceVault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "dest",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "escrow",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "rerollBonusV6",
+      "accounts": [
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "nftMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "userNftAta",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "userDefaiAta",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "defaiMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "bonusState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "vestingState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "userTaxState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "updateNftMetadataV6",
+      "accounts": [
+        {
+          "name": "nftMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "bonusState",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "vestingState",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "publicKey"
+          },
+          {
+            "name": "oldMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "newMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "collection",
+            "type": "publicKey"
+          },
+          {
+            "name": "treasury",
+            "type": "publicKey"
+          },
+          {
+            "name": "prices",
+            "type": {
+              "array": [
+                "u64",
+                5
+              ]
+            }
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Escrow",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TaxState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "currentBps",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "lastResetTs",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CollectionConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "publicKey"
+          },
+          {
+            "name": "collectionMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "treasury",
+            "type": "publicKey"
+          },
+          {
+            "name": "defaiMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "oldDefaiMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "tierNames",
+            "type": {
+              "array": [
+                "string",
+                5
+              ]
+            }
+          },
+          {
+            "name": "tierSymbols",
+            "type": {
+              "array": [
+                "string",
+                5
+              ]
+            }
+          },
+          {
+            "name": "tierPrices",
+            "type": {
+              "array": [
+                "u64",
+                5
+              ]
+            }
+          },
+          {
+            "name": "tierSupplies",
+            "type": {
+              "array": [
+                "u16",
+                5
+              ]
+            }
+          },
+          {
+            "name": "tierMinted",
+            "type": {
+              "array": [
+                "u16",
+                5
+              ]
+            }
+          },
+          {
+            "name": "tierUriPrefixes",
+            "type": {
+              "array": [
+                "string",
+                5
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "BonusStateV6",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "publicKey"
+          },
+          {
+            "name": "tier",
+            "type": "u8"
+          },
+          {
+            "name": "bonusBps",
+            "type": "u16"
+          },
+          {
+            "name": "vestingStart",
+            "type": "i64"
+          },
+          {
+            "name": "vestingDuration",
+            "type": "i64"
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "feeDeducted",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VestingStateV6",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "publicKey"
+          },
+          {
+            "name": "totalAmount",
+            "type": "u64"
+          },
+          {
+            "name": "releasedAmount",
+            "type": "u64"
+          },
+          {
+            "name": "startTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "endTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "lastClaimedTimestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserTaxState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "publicKey"
+          },
+          {
+            "name": "taxRateBps",
+            "type": "u16"
+          },
+          {
+            "name": "lastSwapTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "swapCount",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Whitelist",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "root",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "claimedCount",
+            "type": "u32"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InsufficientOldTokens",
+      "msg": "Insufficient OLD tokens provided."
+    },
+    {
+      "code": 6001,
+      "name": "InsufficientDefaiTokens",
+      "msg": "Insufficient DEFAI tokens provided."
+    },
+    {
+      "code": 6002,
+      "name": "NoLiquidity",
+      "msg": "Escrow is out of NFTs."
+    },
+    {
+      "code": 6003,
+      "name": "InvalidCollection",
+      "msg": "Invalid NFT collection."
+    },
+    {
+      "code": 6004,
+      "name": "MathOverflow",
+      "msg": "Overflow in maths operation."
+    },
+    {
+      "code": 6005,
+      "name": "NftAlreadyRedeemed",
+      "msg": "NFT already redeemed."
+    },
+    {
+      "code": 6006,
+      "name": "NoNft",
+      "msg": "User does not hold the NFT."
+    },
+    {
+      "code": 6007,
+      "name": "InvalidInput",
+      "msg": "Invalid tier or input provided."
+    },
+    {
+      "code": 6008,
+      "name": "InvalidTreasury",
+      "msg": "Treasury token account does not match config."
+    },
+    {
+      "code": 6009,
+      "name": "Unauthorized",
+      "msg": "Unauthorized access."
+    },
+    {
+      "code": 6010,
+      "name": "InvalidTier",
+      "msg": "Invalid tier provided."
+    },
+    {
+      "code": 6011,
+      "name": "AlreadyClaimed",
+      "msg": "Already claimed."
+    },
+    {
+      "code": 6012,
+      "name": "InvalidMerkleProof",
+      "msg": "Invalid Merkle proof."
+    },
+    {
+      "code": 6013,
+      "name": "StillInCliff",
+      "msg": "Still in cliff period."
+    },
+    {
+      "code": 6014,
+      "name": "NothingToClaim",
+      "msg": "Nothing to claim."
+    },
+    {
+      "code": 6015,
+      "name": "TaxResetTooEarly",
+      "msg": "Tax reset too early."
+    },
+    {
+      "code": 6016,
+      "name": "AlreadyPaused",
+      "msg": "Already paused."
+    },
+    {
+      "code": 6017,
+      "name": "NotPaused",
+      "msg": "Not paused."
+    },
+    {
+      "code": 6018,
+      "name": "ProtocolPaused",
+      "msg": "Protocol paused."
+    },
+    {
+      "code": 6019,
+      "name": "InvalidMint",
+      "msg": "Invalid mint."
+    },
+    {
+      "code": 6020,
+      "name": "InsufficientDefaiForReroll",
+      "msg": "Insufficient DEFAI balance for reroll. Must hold base tier amount."
+    }
+  ]
+}
