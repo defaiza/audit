@@ -4,6 +4,8 @@ import { Layout } from '@/components/Layout'
 import { AdvancedSecurityPanel } from '@/components/AdvancedSecurityPanel'
 import { CheckPrograms } from '@/components/CheckPrograms'
 import { DeploymentControls } from '@/components/DeploymentControls'
+import Link from 'next/link'
+import { DocumentTextIcon } from '@heroicons/react/24/outline'
 
 export default function Home() {
   const { connection } = useConnection()
@@ -13,10 +15,21 @@ export default function Home() {
     <Layout>
       <div className="space-y-8">
         <div>
-          <h1 className="text-4xl font-bold text-white mb-2">🛡️ DeFAI Security Audit Center</h1>
-          <p className="text-gray-400 text-lg">
-            Comprehensive security testing, auditing, and monitoring tools for DeFAI programs
-          </p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-4xl font-bold text-white mb-2">🛡️ DeFAI Security Audit Center</h1>
+              <p className="text-gray-400 text-lg">
+                Comprehensive security testing, auditing, and monitoring tools for DeFAI programs
+              </p>
+            </div>
+            <Link 
+              href="/reports" 
+              className="flex items-center space-x-2 bg-defai-primary hover:bg-defai-primary-dark text-white px-4 py-3 rounded-lg transition-colors"
+            >
+              <DocumentTextIcon className="h-5 w-5" />
+              <span>View Reports</span>
+            </Link>
+          </div>
         </div>
 
         {/* Network & Deployment Status */}

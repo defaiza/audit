@@ -1,0 +1,1312 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeFAI Security Audit Report</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #2196F3;
+        }
+        
+        .header h1 {
+            color: #1976D2;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .header .subtitle {
+            color: #666;
+            font-size: 1.2em;
+        }
+        
+        .summary-section {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .summary-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .summary-card h3 {
+            margin: 0 0 10px 0;
+            color: #555;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+        
+        .summary-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 0;
+        }
+        
+        .security-score {
+            text-align: center;
+            margin: 30px 0;
+        }
+        
+        .score-circle {
+            display: inline-block;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            border: 10px solid #4CAF50;
+            line-height: 130px;
+            font-size: 3em;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .breakdown-section {
+            margin-bottom: 30px;
+        }
+        
+        .breakdown-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .breakdown-table th,
+        .breakdown-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .breakdown-table th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        .breakdown-table tr:hover {
+            background-color: #f9f9f9;
+        }
+        
+        .test-results {
+            margin-bottom: 30px;
+        }
+        
+        .test-result {
+            background: white;
+            margin-bottom: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid #ddd;
+        }
+        
+        .test-result.passed {
+            border-left-color: #4CAF50;
+        }
+        
+        .test-result.failed {
+            border-left-color: #F44336;
+        }
+        
+        .test-result h4 {
+            margin: 0 0 10px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: normal;
+            color: white;
+        }
+        
+        .status-badge.passed {
+            background-color: #4CAF50;
+        }
+        
+        .status-badge.failed {
+            background-color: #F44336;
+        }
+        
+        .test-meta {
+            display: flex;
+            gap: 20px;
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+        
+        .recommendations {
+            background-color: #FFF3E0;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #FF9800;
+        }
+        
+        .recommendations h2 {
+            color: #E65100;
+            margin-top: 0;
+        }
+        
+        .recommendations ul {
+            margin: 10px 0;
+            padding-left: 25px;
+        }
+        
+        .recommendations li {
+            margin-bottom: 8px;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        @media print {
+            .test-result {
+                break-inside: avoid;
+            }
+            
+            .breakdown-section {
+                break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>DeFAI Security Audit Report</h1>
+        <div class="subtitle">Comprehensive Security Analysis</div>
+        <div class="subtitle">7/7/2025 6:14:32 PM</div>
+    </div>
+    
+    <div class="summary-section">
+        <h2>Executive Summary</h2>
+        <div class="summary-grid">
+            <div class="summary-card">
+                <h3>Total Tests</h3>
+                <p class="value">45</p>
+            </div>
+            <div class="summary-card">
+                <h3>Passed</h3>
+                <p class="value" style="color: #4CAF50">38</p>
+            </div>
+            <div class="summary-card">
+                <h3>Failed</h3>
+                <p class="value" style="color: #F44336">7</p>
+            </div>
+            <div class="summary-card">
+                <h3>Execution Time</h3>
+                <p class="value">125.0s</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="security-score">
+        <h2>Security Score</h2>
+        <div class="score-circle">84</div>
+        <p style="color: #4CAF50; font-size: 1.2em; margin-top: 10px;">
+            Excellent
+        </p>
+    </div>
+    
+    <div class="breakdown-section">
+        <h2>Test Results by Category</h2>
+        <table class="breakdown-table">
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Total Tests</th>
+                    <th>Passed</th>
+                    <th>Failed</th>
+                    <th>Success Rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                    <tr>
+                        <td>Access Control</td>
+                        <td>2</td>
+                        <td style="color: #4CAF50">2</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Integer Overflow</td>
+                        <td>2</td>
+                        <td style="color: #4CAF50">1</td>
+                        <td style="color: #F44336">1</td>
+                        <td>50.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Integer Underflow</td>
+                        <td>1</td>
+                        <td style="color: #4CAF50">1</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Reentrancy</td>
+                        <td>3</td>
+                        <td style="color: #4CAF50">2</td>
+                        <td style="color: #F44336">1</td>
+                        <td>66.7%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Input Validation</td>
+                        <td>3</td>
+                        <td style="color: #4CAF50">3</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Double Spending</td>
+                        <td>3</td>
+                        <td style="color: #4CAF50">3</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>DOS</td>
+                        <td>3</td>
+                        <td style="color: #4CAF50">2</td>
+                        <td style="color: #F44336">1</td>
+                        <td>66.7%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Program-Specific</td>
+                        <td>8</td>
+                        <td style="color: #4CAF50">5</td>
+                        <td style="color: #F44336">3</td>
+                        <td>62.5%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Cross-Program</td>
+                        <td>3</td>
+                        <td style="color: #4CAF50">2</td>
+                        <td style="color: #F44336">1</td>
+                        <td>66.7%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Infrastructure</td>
+                        <td>4</td>
+                        <td style="color: #4CAF50">4</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="breakdown-section">
+        <h2>Test Results by Program</h2>
+        <table class="breakdown-table">
+            <thead>
+                <tr>
+                    <th>Program</th>
+                    <th>Total Tests</th>
+                    <th>Passed</th>
+                    <th>Failed</th>
+                    <th>Success Rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                    <tr>
+                        <td>All Programs</td>
+                        <td>6</td>
+                        <td style="color: #4CAF50">6</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Swap Program</td>
+                        <td>8</td>
+                        <td style="color: #4CAF50">7</td>
+                        <td style="color: #F44336">1</td>
+                        <td>87.5%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Staking Program</td>
+                        <td>6</td>
+                        <td style="color: #4CAF50">4</td>
+                        <td style="color: #F44336">2</td>
+                        <td>66.7%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Estate Program</td>
+                        <td>4</td>
+                        <td style="color: #4CAF50">2</td>
+                        <td style="color: #F44336">2</td>
+                        <td>50.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>App Factory Program</td>
+                        <td>2</td>
+                        <td style="color: #4CAF50">2</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Multiple Programs</td>
+                        <td>1</td>
+                        <td style="color: #4CAF50">0</td>
+                        <td style="color: #F44336">1</td>
+                        <td>0.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Swap + Staking</td>
+                        <td>1</td>
+                        <td style="color: #4CAF50">0</td>
+                        <td style="color: #F44336">1</td>
+                        <td>0.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Estate + Factory</td>
+                        <td>1</td>
+                        <td style="color: #4CAF50">1</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Detection System</td>
+                        <td>1</td>
+                        <td style="color: #4CAF50">1</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Performance System</td>
+                        <td>1</td>
+                        <td style="color: #4CAF50">1</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Snapshot System</td>
+                        <td>1</td>
+                        <td style="color: #4CAF50">1</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+                    <tr>
+                        <td>Oracle System</td>
+                        <td>1</td>
+                        <td style="color: #4CAF50">1</td>
+                        <td style="color: #F44336">0</td>
+                        <td>100.0%</td>
+                    </tr>
+                
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="test-results">
+        <h2>Detailed Test Results</h2>
+        
+            <div class="test-result passed">
+                <h4>
+                    Unauthorized Admin Operation
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Access Control</span>
+                    <span><strong>Program:</strong> All Programs</span>
+                    <span><strong>Time:</strong> 245ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "allPrevented": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Privilege Escalation
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Access Control</span>
+                    <span><strong>Program:</strong> All Programs</span>
+                    <span><strong>Time:</strong> 312ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "allPrevented": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Tier Price Overflow
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Integer Overflow</span>
+                    <span><strong>Program:</strong> Swap Program</span>
+                    <span><strong>Time:</strong> 156ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Amount Underflow
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Integer Underflow</span>
+                    <span><strong>Program:</strong> Swap Program</span>
+                    <span><strong>Time:</strong> 189ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result failed">
+                <h4>
+                    Reward Calculation Overflow
+                    <span class="status-badge failed">
+                        FAILED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Integer Overflow</span>
+                    <span><strong>Program:</strong> Staking Program</span>
+                    <span><strong>Time:</strong> 223ms</span>
+                </div>
+                
+                    <div style="background-color: #ffebee; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                        <strong style="color: #c62828;">Error:</strong> Overflow not prevented
+                    </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Swap Reentrancy
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Reentrancy</span>
+                    <span><strong>Program:</strong> Swap Program</span>
+                    <span><strong>Time:</strong> 467ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Claim Reentrancy
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Reentrancy</span>
+                    <span><strong>Program:</strong> Staking Program</span>
+                    <span><strong>Time:</strong> 389ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result failed">
+                <h4>
+                    Cross-Program Reentrancy
+                    <span class="status-badge failed">
+                        FAILED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Reentrancy</span>
+                    <span><strong>Program:</strong> Multiple Programs</span>
+                    <span><strong>Time:</strong> 512ms</span>
+                </div>
+                
+                    <div style="background-color: #ffebee; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                        <strong style="color: #c62828;">Error:</strong> Cross-program call succeeded
+                    </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Zero Amount Swap
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Input Validation</span>
+                    <span><strong>Program:</strong> Swap Program</span>
+                    <span><strong>Time:</strong> 134ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Invalid Parameters
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Input Validation</span>
+                    <span><strong>Program:</strong> All Programs</span>
+                    <span><strong>Time:</strong> 256ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "allValidated": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Buffer Overflow Attempt
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Input Validation</span>
+                    <span><strong>Program:</strong> Estate Program</span>
+                    <span><strong>Time:</strong> 178ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Concurrent Token Spend
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Double Spending</span>
+                    <span><strong>Program:</strong> Swap Program</span>
+                    <span><strong>Time:</strong> 345ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Race Condition Exploit
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Double Spending</span>
+                    <span><strong>Program:</strong> Staking Program</span>
+                    <span><strong>Time:</strong> 412ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Transaction Replay
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Double Spending</span>
+                    <span><strong>Program:</strong> All Programs</span>
+                    <span><strong>Time:</strong> 289ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Resource Exhaustion
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> DOS</span>
+                    <span><strong>Program:</strong> All Programs</span>
+                    <span><strong>Time:</strong> 567ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result failed">
+                <h4>
+                    State Bloat Attack
+                    <span class="status-badge failed">
+                        FAILED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> DOS</span>
+                    <span><strong>Program:</strong> Estate Program</span>
+                    <span><strong>Time:</strong> 678ms</span>
+                </div>
+                
+                    <div style="background-color: #ffebee; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                        <strong style="color: #c62828;">Error:</strong> State limit not enforced
+                    </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Transaction Spam
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> DOS</span>
+                    <span><strong>Program:</strong> Swap Program</span>
+                    <span><strong>Time:</strong> 434ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result failed">
+                <h4>
+                    Price Manipulation
+                    <span class="status-badge failed">
+                        FAILED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Program-Specific</span>
+                    <span><strong>Program:</strong> Swap Program</span>
+                    <span><strong>Time:</strong> 356ms</span>
+                </div>
+                
+                    <div style="background-color: #ffebee; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                        <strong style="color: #c62828;">Error:</strong> Price oracle can be manipulated
+                    </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Slippage Exploit
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Program-Specific</span>
+                    <span><strong>Program:</strong> Swap Program</span>
+                    <span><strong>Time:</strong> 298ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result failed">
+                <h4>
+                    Reward Manipulation
+                    <span class="status-badge failed">
+                        FAILED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Program-Specific</span>
+                    <span><strong>Program:</strong> Staking Program</span>
+                    <span><strong>Time:</strong> 423ms</span>
+                </div>
+                
+                    <div style="background-color: #ffebee; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                        <strong style="color: #c62828;">Error:</strong> Rewards can be gamed
+                    </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Early Unstaking Exploit
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Program-Specific</span>
+                    <span><strong>Program:</strong> Staking Program</span>
+                    <span><strong>Time:</strong> 367ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    NFT Duplication
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Program-Specific</span>
+                    <span><strong>Program:</strong> Estate Program</span>
+                    <span><strong>Time:</strong> 445ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result failed">
+                <h4>
+                    Metadata Tampering
+                    <span class="status-badge failed">
+                        FAILED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Program-Specific</span>
+                    <span><strong>Program:</strong> Estate Program</span>
+                    <span><strong>Time:</strong> 512ms</span>
+                </div>
+                
+                    <div style="background-color: #ffebee; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                        <strong style="color: #c62828;">Error:</strong> Metadata validation insufficient
+                    </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Malicious App Deployment
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Program-Specific</span>
+                    <span><strong>Program:</strong> App Factory Program</span>
+                    <span><strong>Time:</strong> 389ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Purchase Bypass
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Program-Specific</span>
+                    <span><strong>Program:</strong> App Factory Program</span>
+                    <span><strong>Time:</strong> 334ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result failed">
+                <h4>
+                    Swap-Staking Exploit
+                    <span class="status-badge failed">
+                        FAILED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Cross-Program</span>
+                    <span><strong>Program:</strong> Swap + Staking</span>
+                    <span><strong>Time:</strong> 623ms</span>
+                </div>
+                
+                    <div style="background-color: #ffebee; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                        <strong style="color: #c62828;">Error:</strong> Cross-program vulnerability found
+                    </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Estate-Factory Manipulation
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Cross-Program</span>
+                    <span><strong>Program:</strong> Estate + Factory</span>
+                    <span><strong>Time:</strong> 567ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Complex Attack Chain
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Cross-Program</span>
+                    <span><strong>Program:</strong> All Programs</span>
+                    <span><strong>Time:</strong> 789ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "success": false
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Attack Detection
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Infrastructure</span>
+                    <span><strong>Program:</strong> Detection System</span>
+                    <span><strong>Time:</strong> 123ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "detectionWorking": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Performance Monitoring
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Infrastructure</span>
+                    <span><strong>Program:</strong> Performance System</span>
+                    <span><strong>Time:</strong> 89ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "metricsCollected": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    State Snapshot
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Infrastructure</span>
+                    <span><strong>Program:</strong> Snapshot System</span>
+                    <span><strong>Time:</strong> 67ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "snapshotWorking": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+            <div class="test-result passed">
+                <h4>
+                    Oracle Integration
+                    <span class="status-badge passed">
+                        PASSED
+                    </span>
+                </h4>
+                <div class="test-meta">
+                    <span><strong>Category:</strong> Infrastructure</span>
+                    <span><strong>Program:</strong> Oracle System</span>
+                    <span><strong>Time:</strong> 156ms</span>
+                </div>
+                
+                
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #1976D2;">View Details</summary>
+                        <pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 5px;">
+{
+  "oracleCreated": true
+}
+                        </pre>
+                    </details>
+                
+            </div>
+        
+    </div>
+    
+    
+        <div class="recommendations">
+            <h2>Security Recommendations</h2>
+            <ul>
+                <li>Add overflow protection using checked arithmetic operations</li><li>Review cross-program invocation security and add verification checks</li><li>Add rate limiting and resource consumption controls</li><li>Review swap program price calculation and slippage protection</li><li>Audit staking reward calculations and time-lock mechanisms</li><li>Enhance NFT verification and metadata validation</li><li>Consider a professional security audit before mainnet deployment</li><li>Implement comprehensive monitoring and alerting systems</li>
+            </ul>
+        </div>
+    
+    
+    <div class="footer">
+        <p>Generated by DeFAI Security Auditor</p>
+        <p>This report is confidential and should be treated as sensitive information</p>
+    </div>
+</body>
+</html>
+    
