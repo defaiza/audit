@@ -33,7 +33,8 @@ export const TestResults: FC<Props> = ({ programName, results, onClose }) => {
 
   const successCount = results.filter(r => r.status === 'success').length
   const totalCount = results.length
-  const successRate = totalCount > 0 ? (successCount / totalCount * 100).toFixed(0) : 0
+  const successRateNum = totalCount > 0 ? (successCount / totalCount * 100) : 0
+  const successRate = successRateNum.toFixed(0)
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -50,7 +51,7 @@ export const TestResults: FC<Props> = ({ programName, results, onClose }) => {
           </div>
           <div className="mt-2 flex items-center space-x-4">
             <span className="text-sm text-gray-400">Success Rate:</span>
-            <span className={`text-lg font-bold ${successRate >= 80 ? 'text-green-500' : successRate >= 50 ? 'text-yellow-500' : 'text-red-500'}`}>
+            <span className={`text-lg font-bold ${successRateNum >= 80 ? 'text-green-500' : successRateNum >= 50 ? 'text-yellow-500' : 'text-red-500'}`}>
               {successRate}%
             </span>
             <span className="text-sm text-gray-400">({successCount}/{totalCount} tests passed)</span>

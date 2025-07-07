@@ -20,7 +20,7 @@ export async function testInitialize() {
     name: defaiSwapIdl.name,
     version: defaiSwapIdl.version,
     instructions: defaiSwapIdl.instructions?.length || 0,
-    hasMetadata: !!defaiSwapIdl.metadata
+    hasMetadata: !!(defaiSwapIdl as any).metadata
   })
   
   try {

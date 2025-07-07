@@ -33,7 +33,7 @@ export function InitializeButton() {
         toast.success(`Initialized ${successCount} programs successfully!`)
       }
       if (skippedCount > 0) {
-        toast.info(`${skippedCount} programs were already initialized`)
+        toast(`${skippedCount} programs were already initialized`, { icon: 'ℹ️' })
       }
     } catch (error) {
       console.error('Initialization error:', error)

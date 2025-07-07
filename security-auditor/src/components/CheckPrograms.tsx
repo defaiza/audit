@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useConnection } from '@solana/wallet-adapter-react'
 import { PublicKey } from '@solana/web3.js'
 import { PROGRAMS } from '@/utils/constants'
@@ -15,11 +15,7 @@ export function CheckPrograms() {
   const [programStatuses, setProgramStatuses] = useState<ProgramStatus[]>([])
   const [checking, setChecking] = useState(true)
 
-  useEffect(() => {
-    checkPrograms()
-  }, [connection])
-
-  const checkPrograms = async () => {
+  const checkPrograms = useCallback(async () => {
     setChecking(true)
     const statuses: ProgramStatus[] = []
 
@@ -46,7 +42,11 @@ export function CheckPrograms() {
 
     setProgramStatuses(statuses)
     setChecking(false)
-  }
+  }, [connection])
+
+  useEffect(() => {
+    checkPrograms()
+  }, [checkPrograms])
 
   return (
     <div className="bg-gray-800 rounded-lg p-6">

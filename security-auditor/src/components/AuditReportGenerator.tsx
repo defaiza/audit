@@ -198,7 +198,7 @@ export function AuditReportGenerator({ testResults, connection, programs }: Audi
 `
       const attackResults = testResults.filter(r => r.testType === 'attack_vector')
       if (attackResults.length > 0) {
-        const categories = [...new Set(attackResults.map(r => r.details?.category || 'Unknown'))]
+        const categories = Array.from(new Set(attackResults.map(r => r.details?.category || 'Unknown')))
         
         categories.forEach(category => {
           report += `### ${category.replace('_', ' ').toUpperCase()} Tests\n\n`

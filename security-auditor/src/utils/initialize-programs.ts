@@ -1,5 +1,5 @@
 import * as anchor from '@coral-xyz/anchor'
-import { Program } from '@coral-xyz/anchor'
+import { Program, Idl } from '@coral-xyz/anchor'
 import { Connection, PublicKey, Keypair, SystemProgram, Transaction, sendAndConfirmTransaction } from '@solana/web3.js'
 import { 
   createMint, 
@@ -13,10 +13,7 @@ import {
   getAssociatedTokenAddress,
   MINT_SIZE
 } from '@solana/spl-token'
-import { DefaiSwap } from '@/idl/defai_swap'
-import { DefaiStaking } from '@/idl/defai_staking'
-import { DefaiEstate } from '@/idl/defai_estate'
-import { DefaiAppFactory } from '@/idl/defai_app_factory'
+// IDL types are not needed since we're using them as Idl
 import defaiSwapIdl from '@/idl/defai_swap.json'
 import defaiStakingIdl from '@/idl/defai_staking.json'
 import defaiEstateIdl from '@/idl/defai_estate.json'
@@ -157,7 +154,7 @@ export class ProgramInitializer {
   async initializeSwap(defaiMint: PublicKey, rewardsMint: PublicKey): Promise<InitializationResult> {
     try {
       const programId = new PublicKey('3WeYbjGoiTQ6qZ8s9Ek6sUZCy2FzG7b9NbGfbVCtHS2n')
-      const program = new Program(defaiSwapIdl as DefaiSwap, programId, this.provider) as Program<DefaiSwap>
+      const program = new Program(defaiSwapIdl as Idl, programId, this.provider)
       
       // PDAs
       const [configPda] = PublicKey.findProgramAddressSync([Buffer.from('config')], programId)
@@ -219,7 +216,7 @@ export class ProgramInitializer {
   async initializeStaking(defaiMint: PublicKey): Promise<InitializationResult> {
     try {
       const programId = new PublicKey('3sKj7jgDkiT3hroWho3YZSWAfcmpXXucNKipN4vC3EFM')
-      const program = new Program(defaiStakingIdl as DefaiStaking, programId, this.provider) as Program<DefaiStaking>
+      const program = new Program(defaiStakingIdl as Idl, programId, this.provider)
       
       // PDAs
       const [programStatePda] = PublicKey.findProgramAddressSync([Buffer.from('program-state')], programId)
@@ -266,7 +263,7 @@ export class ProgramInitializer {
   async initializeEstate(): Promise<InitializationResult> {
     try {
       const programId = new PublicKey('2zkarMr8w1k6t1jjcZvmcfVPoFnKy3b1kbxEZH6aATJi')
-      const program = new Program(defaiEstateIdl as DefaiEstate, programId, this.provider) as Program<DefaiEstate>
+      const program = new Program(defaiEstateIdl as Idl, programId, this.provider)
       
       // PDAs
       const [estateManagerPda] = PublicKey.findProgramAddressSync([Buffer.from('estate_manager')], programId)
@@ -309,7 +306,7 @@ export class ProgramInitializer {
   async initializeAppFactory(defaiMint: PublicKey): Promise<InitializationResult> {
     try {
       const programId = new PublicKey('Ckp11QQpgdP8poYAPVdVjaA5yqfk9Kc4Bd3zmKfzhFAZ')
-      const program = new Program(defaiAppFactoryIdl as DefaiAppFactory, programId, this.provider) as Program<DefaiAppFactory>
+      const program = new Program(defaiAppFactoryIdl as Idl, programId, this.provider)
       
       // PDAs
       const [appFactoryPda] = PublicKey.findProgramAddressSync([Buffer.from('app_factory')], programId)

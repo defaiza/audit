@@ -1,11 +1,8 @@
 import * as anchor from '@coral-xyz/anchor'
-import { Program, AnchorProvider } from '@coral-xyz/anchor'
+import { Program, AnchorProvider, Idl } from '@coral-xyz/anchor'
 import { Connection, PublicKey, Keypair, SystemProgram } from '@solana/web3.js'
 import { TOKEN_PROGRAM_ID, createMint, createAccount, mintTo } from '@solana/spl-token'
-import { DefaiSwap } from '@/idl/defai_swap'
-import { DefaiStaking } from '@/idl/defai_staking'
-import { DefaiEstate } from '@/idl/defai_estate'
-import { DefaiAppFactory } from '@/idl/defai_app_factory'
+// IDL types are not needed since we're using them as Idl
 import defaiSwapIdl from '@/idl/defai_swap.json'
 import defaiStakingIdl from '@/idl/defai_staking.json'
 import defaiEstateIdl from '@/idl/defai_estate.json'
@@ -35,7 +32,7 @@ export class ProgramTester {
     
     try {
       const programPubkey = new PublicKey(programId)
-      const program = new Program(defaiSwapIdl as DefaiSwap, programPubkey, this.provider) as Program<DefaiSwap>
+      const program = new Program(defaiSwapIdl as Idl, programPubkey, this.provider)
       
       // Test 1: Check if config is initialized (defai_swap uses config, not swap_pool)
       try {
@@ -49,7 +46,7 @@ export class ProgramTester {
         results.push({
           scenario: 'Swap Config Initialization',
           status: 'success',
-          message: `Config initialized, Admin: ${config.admin.toBase58()}`
+          message: `Config initialized, Admin: ${(config as any).admin.toBase58()}`
         })
       } catch (err) {
         results.push({
@@ -100,7 +97,7 @@ export class ProgramTester {
     
     try {
       const programPubkey = new PublicKey(programId)
-      const program = new Program(defaiStakingIdl as DefaiStaking, programPubkey, this.provider) as Program<DefaiStaking>
+      const program = new Program(defaiStakingIdl as Idl, programPubkey, this.provider)
       
       // Test 1: Check program state (defai_staking uses program-state)
       try {
@@ -114,7 +111,7 @@ export class ProgramTester {
         results.push({
           scenario: 'Staking Program State',
           status: 'success',
-          message: `Total staked: ${programState.totalStaked.toString()}, Authority: ${programState.authority.toBase58()}`
+          message: `Total staked: ${(programState as any).totalStaked.toString()}, Authority: ${(programState as any).authority.toBase58()}`
         })
       } catch (err) {
         results.push({
@@ -158,7 +155,7 @@ export class ProgramTester {
     
     try {
       const programPubkey = new PublicKey(programId)
-      const program = new Program(defaiEstateIdl as DefaiEstate, programPubkey, this.provider) as Program<DefaiEstate>
+      const program = new Program(defaiEstateIdl as Idl, programPubkey, this.provider)
       
       // Test 1: Check estate manager
       try {
@@ -172,7 +169,7 @@ export class ProgramTester {
         results.push({
           scenario: 'Estate Manager Check',
           status: 'success',
-          message: `Total estates: ${estateManager.totalEstates.toString()}, Fee: ${estateManager.platformFee}%`
+          message: `Total estates: ${(estateManager as any).totalEstates.toString()}, Fee: ${(estateManager as any).platformFee}%`
         })
       } catch (err) {
         results.push({
@@ -216,7 +213,7 @@ export class ProgramTester {
     
     try {
       const programPubkey = new PublicKey(programId)
-      const program = new Program(defaiAppFactoryIdl as DefaiAppFactory, programPubkey, this.provider) as Program<DefaiAppFactory>
+      const program = new Program(defaiAppFactoryIdl as Idl, programPubkey, this.provider)
       
       // Test 1: Check app factory state
       try {
@@ -230,7 +227,7 @@ export class ProgramTester {
         results.push({
           scenario: 'App Factory State Check',
           status: 'success',
-          message: `Platform fee: ${appFactory.platformFeeBps}, Authority: ${appFactory.authority.toBase58()}`
+          message: `Platform fee: ${(appFactory as any).platformFeeBps}, Authority: ${(appFactory as any).authority.toBase58()}`
         })
       } catch (err) {
         results.push({
@@ -287,7 +284,7 @@ export class ProgramTester {
         name: 'IDL Availability',
         test: async () => {
           // Check if we have a local IDL for this program
-          const idlMap = {
+          const idlMap: { [key: string]: any } = {
             '3WeYbjGoiTQ6qZ8s9Ek6sUZCy2FzG7b9NbGfbVCtHS2n': defaiSwapIdl,
             '3sKj7jgDkiT3hroWho3YZSWAfcmpXXucNKipN4vC3EFM': defaiStakingIdl,
             '2zkarMr8w1k6t1jjcZvmcfVPoFnKy3b1kbxEZH6aATJi': defaiEstateIdl,
