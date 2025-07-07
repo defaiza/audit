@@ -1,28 +1,28 @@
 export const PROGRAMS = {
   SWAP: {
     name: 'DeFAI Swap',
-    programId: 'SwapWR2cjuCAM7A9tQkqCh7MiKaeYr5rGGQFqnMVjfP',
+    programId: '2rpNRpFnZEbb9Xoonieg7THkKnYEQhZoSK8bKNtVaVLS',
     readiness: 9.5,
     status: 'Ready',
     features: ['Token Swap', 'NFT Exchange', 'Vesting', 'VRF Randomness']
   },
   STAKING: {
     name: 'DeFAI Staking',
-    programId: 'StakfVMEW5hqTq7SYe5qFBJrX4cxa9NNmqWXjFuqFKy',
+    programId: 'CyYfX3MjkuQBTpD8N3KLXBAr8Nik89f63FZ3jFVSMd6s',
     readiness: 9.5,
     status: 'Ready',
     features: ['Tiered Staking', 'Compound Rewards', 'APY Tiers', 'Escrow']
   },
   ESTATE: {
     name: 'DeFAI Estate',
-    programId: 'EstateVs1eKrmwRrmAWfW8KrZBFqSmFLQhcbDbLQnc7y',
+    programId: 'HYJe4U2DToJCjb5T8tysN4784twLUk48dUjPGD7dKYut',
     readiness: 9.5,
     status: 'Ready',
     features: ['Digital Estate', 'Inheritance', 'Multi-sig', 'AI Trading']
   },
   APP_FACTORY: {
     name: 'DeFAI App Factory',
-    programId: 'FactHVn6j9XTSzg9RXgGMXGcRMyxyDXJjHP9AkhtDYfJ',
+    programId: 'AzcDoYYY1cHCd3faCKd8tG76ESUnuRz8jVBXEcxFwznQ',
     readiness: 7.0,
     status: 'Needs Testing',
     features: ['App Registration', 'SFT Creation', 'Monetization', 'Usage Tracking']

@@ -1,167 +1,186 @@
 import { useState } from 'react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { Layout } from '@/components/Layout'
-import { ProgramCard } from '@/components/ProgramCard'
-import { TestResults } from '@/components/TestResults'
-import { SecurityOverview } from '@/components/SecurityOverview'
-import { PROGRAMS, TEST_SCENARIOS } from '@/utils/constants'
-import { ProgramTester, TestResult } from '@/utils/program-test'
-import toast from 'react-hot-toast'
+import { AdvancedSecurityPanel } from '@/components/AdvancedSecurityPanel'
+import { CheckPrograms } from '@/components/CheckPrograms'
+import { DeploymentControls } from '@/components/DeploymentControls'
 
 export default function Home() {
   const { connection } = useConnection()
   const wallet = useWallet()
-  const [loadingProgram, setLoadingProgram] = useState<string | null>(null)
-  const [testResults, setTestResults] = useState<{
-    program: string
-    results: TestResult[]
-  } | null>(null)
-  const [selectedProgram, setSelectedProgram] = useState<string | null>(null)
-
-  const runTests = async (programKey: string) => {
-    if (!wallet.connected) {
-      toast.error('Please connect your wallet first')
-      return
-    }
-
-    setLoadingProgram(programKey)
-    const program = PROGRAMS[programKey as keyof typeof PROGRAMS]
-    
-    try {
-      const tester = new ProgramTester(connection, wallet)
-      let results: TestResult[] = []
-      
-      // Run security checks first
-      const securityResults = await tester.runSecurityChecks(program.programId, program.name)
-      results = [...securityResults]
-      
-      // Run program-specific tests
-      switch (programKey) {
-        case 'SWAP':
-          const swapResults = await tester.testSwapProgram(program.programId)
-          results = [...results, ...swapResults]
-          break
-        case 'STAKING':
-          const stakingResults = await tester.testStakingProgram(program.programId)
-          results = [...results, ...stakingResults]
-          break
-        case 'ESTATE':
-          const estateResults = await tester.testEstateProgram(program.programId)
-          results = [...results, ...estateResults]
-          break
-        case 'APP_FACTORY':
-          const factoryResults = await tester.testAppFactoryProgram(program.programId)
-          results = [...results, ...factoryResults]
-          break
-      }
-      
-      setTestResults({
-        program: program.name,
-        results
-      })
-      
-      const successCount = results.filter(r => r.status === 'success').length
-      if (successCount === results.length) {
-        toast.success(`All ${results.length} tests passed!`)
-      } else {
-        toast.error(`${successCount}/${results.length} tests passed`)
-      }
-    } catch (error) {
-      console.error('Test error:', error)
-      toast.error('Failed to run tests')
-    } finally {
-      setLoadingProgram(null)
-    }
-  }
-
-  const getImplementedChecks = (programKey: string): string[] => {
-    // Based on the ProgramsReadiness.md analysis
-    const baseChecks = [
-      'Access Control',
-      'Input Validation',
-      'Overflow Protection',
-      'Event Emissions',
-      'Error Handling',
-      'State Consistency',
-      'PDA Derivation',
-      'Token Account Validation'
-    ]
-    
-    if (programKey === 'SWAP') {
-      return [...baseChecks, 'Admin Timelocks']
-    } else if (programKey === 'STAKING') {
-      return [...baseChecks, 'Reentrancy Guards']
-    } else if (programKey === 'ESTATE') {
-      return [...baseChecks, 'Admin Timelocks', 'Reentrancy Guards']
-    } else if (programKey === 'APP_FACTORY') {
-      return baseChecks.slice(0, 6) // Missing some advanced checks
-    }
-    return baseChecks
-  }
 
   return (
     <Layout>
       <div className="space-y-8">
         <div>
-          <h2 className="text-3xl font-bold text-white mb-2">Security Audit Dashboard</h2>
-          <p className="text-gray-400">
-            Test and audit DeFAI programs for security vulnerabilities and compliance
+          <h1 className="text-4xl font-bold text-white mb-2">🛡️ DeFAI Security Audit Center</h1>
+          <p className="text-gray-400 text-lg">
+            Comprehensive security testing, auditing, and monitoring tools for DeFAI programs
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {Object.entries(PROGRAMS).map(([key, program]) => (
-            <ProgramCard
-              key={key}
-              {...program}
-              onTest={() => runTests(key)}
-              isLoading={loadingProgram === key}
-            />
-          ))}
+        {/* Network & Deployment Status */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <DeploymentControls />
+          <CheckPrograms />
         </div>
 
-        {selectedProgram && (
-          <SecurityOverview
-            programName={PROGRAMS[selectedProgram as keyof typeof PROGRAMS].name}
-            implementedChecks={getImplementedChecks(selectedProgram)}
-          />
-        )}
+        {/* Main Security Panel */}
+        <AdvancedSecurityPanel />
 
+        {/* Quick Start Guide */}
         <div className="bg-defai-gray rounded-lg p-6 border border-gray-800">
-          <h3 className="text-lg font-semibold text-white mb-4">Test Scenarios</h3>
-          <div className="space-y-4">
-            {Object.entries(TEST_SCENARIOS).map(([program, scenarios]) => (
-              <div key={program}>
-                <h4 className="text-sm font-medium text-defai-primary mb-2">
-                  {PROGRAMS[program as keyof typeof PROGRAMS].name}
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                  {scenarios.map((scenario, i) => (
-                    <span key={i} className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded">
-                      {scenario}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <h3 className="text-lg font-semibold text-white mb-4">🚀 Quick Start Guide</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gray-800 rounded-lg p-4">
+              <div className="text-2xl mb-2">1️⃣</div>
+              <h4 className="text-sm font-medium text-white mb-2">Connect Admin Wallet</h4>
+              <p className="text-xs text-gray-400">
+                Import admin-keypair.json to unlock all administrative functions and privileged operations.
+              </p>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-4">
+              <div className="text-2xl mb-2">2️⃣</div>
+              <h4 className="text-sm font-medium text-white mb-2">Initialize Programs</h4>
+              <p className="text-xs text-gray-400">
+                Configure and deploy programs with custom parameters for comprehensive security testing.
+              </p>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-4">
+              <div className="text-2xl mb-2">3️⃣</div>
+              <h4 className="text-sm font-medium text-white mb-2">Run Security Tests</h4>
+              <p className="text-xs text-gray-400">
+                Execute attack vector tests, monitor security metrics, and validate admin operations.
+              </p>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-4">
+              <div className="text-2xl mb-2">4️⃣</div>
+              <h4 className="text-sm font-medium text-white mb-2">Generate Reports</h4>
+              <p className="text-xs text-gray-400">
+                Create comprehensive audit reports with findings, recommendations, and compliance data.
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="bg-yellow-900 bg-opacity-20 border border-yellow-700 rounded-lg p-4">
-          <p className="text-yellow-400 text-sm">
-            <strong>Note:</strong> This security auditor runs basic connectivity and state checks. 
-            For comprehensive security audits, additional manual testing and code review are required.
+        {/* Security Features Overview */}
+        <div className="bg-defai-gray rounded-lg p-6 border border-gray-800">
+          <h3 className="text-lg font-semibold text-white mb-4">🔒 Security Testing Features</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            
+            {/* Configuration & Initialization */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-defai-primary">🚀 Configuration & Initialization</h4>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• Configurable program parameters</li>
+                <li>• Custom token mint setup</li>
+                <li>• Batch program initialization</li>
+                <li>• Parameter validation</li>
+                <li>• Skip existing initialization</li>
+              </ul>
+            </div>
+
+            {/* Attack Vector Testing */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-defai-primary">🎯 Attack Vector Testing</h4>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• Access control bypass tests</li>
+                <li>• Integer overflow/underflow</li>
+                <li>• Input validation attacks</li>
+                <li>• Reentrancy vulnerability tests</li>
+                <li>• Business logic exploitation</li>
+              </ul>
+            </div>
+
+            {/* Admin Operations */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-defai-primary">🔐 Admin Operations</h4>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• Price and fee management</li>
+                <li>• Treasury configuration</li>
+                <li>• Emergency pause/unpause</li>
+                <li>• Admin privilege changes</li>
+                <li>• Multi-signature operations</li>
+              </ul>
+            </div>
+
+            {/* Real-time Monitoring */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-defai-primary">📊 Real-time Monitoring</h4>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• Program health monitoring</li>
+                <li>• Suspicious activity detection</li>
+                <li>• Performance metrics tracking</li>
+                <li>• Automated alerting system</li>
+                <li>• Response time analysis</li>
+              </ul>
+            </div>
+
+            {/* Security Reporting */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-defai-primary">📋 Security Reporting</h4>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• Comprehensive audit reports</li>
+                <li>• Risk assessment scoring</li>
+                <li>• Vulnerability categorization</li>
+                <li>• Remediation recommendations</li>
+                <li>• Multiple export formats</li>
+              </ul>
+            </div>
+
+            {/* Compliance & Standards */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-defai-primary">✅ Compliance & Standards</h4>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• OWASP security guidelines</li>
+                <li>• Solana best practices</li>
+                <li>• DeFi security standards</li>
+                <li>• Automated compliance checks</li>
+                <li>• Audit trail maintenance</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Important Notes */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-yellow-900 bg-opacity-20 border border-yellow-700 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <span className="text-yellow-400 text-lg">⚠️</span>
+              <div>
+                <p className="text-yellow-400 font-semibold text-sm">Testing Environment</p>
+                <p className="text-yellow-300 text-xs mt-1">
+                  This security audit panel is designed for testing environments only. 
+                  Use with test funds and isolated networks. Some attack tests may modify program state.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-blue-900 bg-opacity-20 border border-blue-700 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <span className="text-blue-400 text-lg">🛡️</span>
+              <div>
+                <p className="text-blue-400 font-semibold text-sm">Security Best Practices</p>
+                <p className="text-blue-300 text-xs mt-1">
+                  Regular security audits, continuous monitoring, and proper access controls are essential 
+                  for maintaining secure DeFi protocols. Use this tool as part of your security pipeline.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Info */}
+        <div className="text-center py-8 border-t border-gray-800">
+          <p className="text-gray-500 text-sm">
+            DeFAI Security Audit Center v1.0 • Built for comprehensive blockchain security testing
+          </p>
+          <p className="text-gray-600 text-xs mt-2">
+            For questions or support, consult the security documentation or contact the development team.
           </p>
         </div>
       </div>
-
-      {testResults && (
-        <TestResults
-          programName={testResults.program}
-          results={testResults.results}
-          onClose={() => setTestResults(null)}
-        />
-      )}
     </Layout>
   )
 }

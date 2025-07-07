@@ -9,7 +9,7 @@ interface Props {
 }
 
 export const WalletContextProvider: FC<Props> = ({ children }) => {
-  const endpoint = useMemo(() => clusterApiUrl('devnet'), [])
+  const endpoint = useMemo(() => process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'http://localhost:8899', [])
   
   const wallets = useMemo(
     () => [new PhantomWalletAdapter()],

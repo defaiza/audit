@@ -1,6 +1,7 @@
 import { FC, ReactNode } from 'react'
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
 import { ShieldCheckIcon } from '@heroicons/react/24/solid'
+import { ClientOnly } from './ClientOnly'
 
 interface Props {
   children: ReactNode
@@ -16,7 +17,9 @@ export const Layout: FC<Props> = ({ children }) => {
               <ShieldCheckIcon className="h-8 w-8 text-defai-primary" />
               <h1 className="text-xl font-bold text-white">DeFAI Security Auditor</h1>
             </div>
-            <WalletMultiButton />
+            <ClientOnly>
+              <WalletMultiButton />
+            </ClientOnly>
           </div>
         </div>
       </header>

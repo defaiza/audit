@@ -6,6 +6,10 @@ import { DefaiSwap } from '@/idl/defai_swap'
 import { DefaiStaking } from '@/idl/defai_staking'
 import { DefaiEstate } from '@/idl/defai_estate'
 import { DefaiAppFactory } from '@/idl/defai_app_factory'
+import defaiSwapIdl from '@/idl/defai_swap.json'
+import defaiStakingIdl from '@/idl/defai_staking.json'
+import defaiEstateIdl from '@/idl/defai_estate.json'
+import defaiAppFactoryIdl from '@/idl/defai_app_factory.json'
 
 export interface TestResult {
   scenario: string
@@ -31,30 +35,27 @@ export class ProgramTester {
     
     try {
       const programPubkey = new PublicKey(programId)
-      const idl = await Program.fetchIdl(programPubkey, this.provider)
-      if (!idl) throw new Error('IDL not found')
+      const program = new Program(defaiSwapIdl as DefaiSwap, programPubkey, this.provider) as Program<DefaiSwap>
       
-      const program = new Program(idl as DefaiSwap, programPubkey, this.provider) as Program<DefaiSwap>
-      
-      // Test 1: Check if swap pool is initialized
+      // Test 1: Check if config is initialized (defai_swap uses config, not swap_pool)
       try {
-        const [swapPoolPDA] = PublicKey.findProgramAddressSync(
-          [Buffer.from('swap_pool')],
+        const [configPDA] = PublicKey.findProgramAddressSync(
+          [Buffer.from('config')],
           programPubkey
         )
         
-        const swapPool = await program.account.swapPool.fetch(swapPoolPDA)
+        const config = await program.account.config.fetch(configPDA)
         
         results.push({
-          scenario: 'Swap Pool Initialization',
+          scenario: 'Swap Config Initialization',
           status: 'success',
-          message: `Pool active: ${swapPool.isActive}, Total swapped: ${swapPool.totalSwapped.toString()}`
+          message: `Config initialized, Admin: ${config.admin.toBase58()}`
         })
       } catch (err) {
         results.push({
-          scenario: 'Swap Pool Initialization',
+          scenario: 'Swap Config Initialization',
           status: 'error',
-          message: 'Swap pool not initialized',
+          message: 'Swap config not initialized - run initialization script',
           error: err
         })
       }
@@ -99,30 +100,27 @@ export class ProgramTester {
     
     try {
       const programPubkey = new PublicKey(programId)
-      const idl = await Program.fetchIdl(programPubkey, this.provider)
-      if (!idl) throw new Error('IDL not found')
+      const program = new Program(defaiStakingIdl as DefaiStaking, programPubkey, this.provider) as Program<DefaiStaking>
       
-      const program = new Program(idl as DefaiStaking, programPubkey, this.provider) as Program<DefaiStaking>
-      
-      // Test 1: Check staking pool
+      // Test 1: Check program state (defai_staking uses program-state)
       try {
-        const [stakingPoolPDA] = PublicKey.findProgramAddressSync(
-          [Buffer.from('staking_pool')],
+        const [programStatePDA] = PublicKey.findProgramAddressSync(
+          [Buffer.from('program-state')],
           programPubkey
         )
         
-        const stakingPool = await program.account.stakingPool.fetch(stakingPoolPDA)
+        const programState = await program.account.programState.fetch(programStatePDA)
         
         results.push({
-          scenario: 'Staking Pool Check',
+          scenario: 'Staking Program State',
           status: 'success',
-          message: `Total staked: ${stakingPool.totalStaked.toString()}, Tiers: ${stakingPool.tiers.length}`
+          message: `Total staked: ${programState.totalStaked.toString()}, Authority: ${programState.authority.toBase58()}`
         })
       } catch (err) {
         results.push({
-          scenario: 'Staking Pool Check',
+          scenario: 'Staking Program State',
           status: 'error',
-          message: 'Staking pool not found',
+          message: 'Staking program not initialized - run initialization script',
           error: err
         })
       }
@@ -160,10 +158,7 @@ export class ProgramTester {
     
     try {
       const programPubkey = new PublicKey(programId)
-      const idl = await Program.fetchIdl(programPubkey, this.provider)
-      if (!idl) throw new Error('IDL not found')
-      
-      const program = new Program(idl as DefaiEstate, programPubkey, this.provider) as Program<DefaiEstate>
+      const program = new Program(defaiEstateIdl as DefaiEstate, programPubkey, this.provider) as Program<DefaiEstate>
       
       // Test 1: Check estate manager
       try {
@@ -221,30 +216,27 @@ export class ProgramTester {
     
     try {
       const programPubkey = new PublicKey(programId)
-      const idl = await Program.fetchIdl(programPubkey, this.provider)
-      if (!idl) throw new Error('IDL not found')
+      const program = new Program(defaiAppFactoryIdl as DefaiAppFactory, programPubkey, this.provider) as Program<DefaiAppFactory>
       
-      const program = new Program(idl as DefaiAppFactory, programPubkey, this.provider) as Program<DefaiAppFactory>
-      
-      // Test 1: Check platform state
+      // Test 1: Check app factory state
       try {
-        const [platformPDA] = PublicKey.findProgramAddressSync(
-          [Buffer.from('platform')],
+        const [appFactoryPDA] = PublicKey.findProgramAddressSync(
+          [Buffer.from('app_factory')],
           programPubkey
         )
         
-        const platform = await program.account.platform.fetch(platformPDA)
+        const appFactory = await program.account.appFactory.fetch(appFactoryPDA)
         
         results.push({
-          scenario: 'Platform State Check',
+          scenario: 'App Factory State Check',
           status: 'success',
-          message: `Total apps: ${platform.totalApps.toString()}, Active: ${platform.isActive}`
+          message: `Platform fee: ${appFactory.platformFeeBps}, Authority: ${appFactory.authority.toBase58()}`
         })
       } catch (err) {
         results.push({
-          scenario: 'Platform State Check',
+          scenario: 'App Factory State Check',
           status: 'error',
-          message: 'Platform not initialized',
+          message: 'App factory not initialized - run initialization script',
           error: err
         })
       }
@@ -294,9 +286,14 @@ export class ProgramTester {
       {
         name: 'IDL Availability',
         test: async () => {
-          const programPubkey = new PublicKey(programId)
-          const idl = await Program.fetchIdl(programPubkey, this.provider)
-          return idl !== null
+          // Check if we have a local IDL for this program
+          const idlMap = {
+            '3WeYbjGoiTQ6qZ8s9Ek6sUZCy2FzG7b9NbGfbVCtHS2n': defaiSwapIdl,
+            '3sKj7jgDkiT3hroWho3YZSWAfcmpXXucNKipN4vC3EFM': defaiStakingIdl,
+            '2zkarMr8w1k6t1jjcZvmcfVPoFnKy3b1kbxEZH6aATJi': defaiEstateIdl,
+            'Ckp11QQpgdP8poYAPVdVjaA5yqfk9Kc4Bd3zmKfzhFAZ': defaiAppFactoryIdl
+          }
+          return idlMap[programId] !== undefined
         }
       },
       {

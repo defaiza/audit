@@ -1,0 +1,27 @@
+[features]
+seeds = false
+skip-lint = false
+
+[programs.localnet]
+defai_swap = "2rpNRpFnZEbb9Xoonieg7THkKnYEQhZoSK8bKNtVaVLS"
+defai_staking = "CyYfX3MjkuQBTpD8N3KLXBAr8Nik89f63FZ3jFVSMd6s"
+defai_estate = "HYJe4U2DToJCjb5T8tysN4784twLUk48dUjPGD7dKYut"
+defai_app_factory = "AzcDoYYY1cHCd3faCKd8tG76ESUnuRz8jVBXEcxFwznQ"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[test]
+startup_wait = 10000
+skip_local_validator = true
+
+[workspace]
+members = ["defai_swap", "defai_staking", "defai_estate", "defai_app_factory"]
+types = "target/types"

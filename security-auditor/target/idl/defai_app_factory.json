@@ -1,0 +1,499 @@
+{
+  "version": "0.1.0",
+  "name": "defai_app_factory",
+  "instructions": [
+    {
+      "name": "initializeAppFactory",
+      "accounts": [
+        {
+          "name": "appFactory",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "authority",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "defaiMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "treasury",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "masterCollection",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "platformFeeBps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "registerApp",
+      "accounts": [
+        {
+          "name": "appFactory",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "appRegistration",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "sftMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "creator",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "price",
+          "type": "u64"
+        },
+        {
+          "name": "maxSupply",
+          "type": "u64"
+        },
+        {
+          "name": "metadataUri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "purchaseAppAccessV2",
+      "accounts": [
+        {
+          "name": "appFactory",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "appRegistration",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "userAppAccess",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "sftMint",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "userSftAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "userDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "creatorDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "treasuryDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "appId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "toggleAppStatus",
+      "accounts": [
+        {
+          "name": "appRegistration",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "creator",
+          "isMut": false,
+          "isSigner": true
+        }
+      ],
+      "args": [
+        {
+          "name": "appId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "updatePlatformSettings",
+      "accounts": [
+        {
+          "name": "appFactory",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "authority",
+          "isMut": false,
+          "isSigner": true
+        }
+      ],
+      "args": [
+        {
+          "name": "newPlatformFeeBps",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "newTreasury",
+          "type": {
+            "option": "publicKey"
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "AppFactory",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "publicKey"
+          },
+          {
+            "name": "defaiMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "treasury",
+            "type": "publicKey"
+          },
+          {
+            "name": "masterCollection",
+            "type": "publicKey"
+          },
+          {
+            "name": "platformFeeBps",
+            "type": "u16"
+          },
+          {
+            "name": "totalApps",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AppRegistration",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "appId",
+            "type": "u64"
+          },
+          {
+            "name": "creator",
+            "type": "publicKey"
+          },
+          {
+            "name": "sftMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "maxSupply",
+            "type": "u64"
+          },
+          {
+            "name": "currentSupply",
+            "type": "u64"
+          },
+          {
+            "name": "isActive",
+            "type": "bool"
+          },
+          {
+            "name": "metadataUri",
+            "type": "string"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserAppAccess",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "publicKey"
+          },
+          {
+            "name": "appId",
+            "type": "u64"
+          },
+          {
+            "name": "sftTokenAccount",
+            "type": "publicKey"
+          },
+          {
+            "name": "purchasedAt",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "AppRegistered",
+      "fields": [
+        {
+          "name": "appId",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "creator",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "sftMint",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "price",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "maxSupply",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "timestamp",
+          "type": "i64",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "AppPurchased",
+      "fields": [
+        {
+          "name": "appId",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "user",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "price",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "platformFee",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "creatorAmount",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "timestamp",
+          "type": "i64",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "AppStatusChanged",
+      "fields": [
+        {
+          "name": "appId",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "isActive",
+          "type": "bool",
+          "index": false
+        },
+        {
+          "name": "timestamp",
+          "type": "i64",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "PlatformSettingsUpdated",
+      "fields": [
+        {
+          "name": "platformFeeBps",
+          "type": {
+            "option": "u16"
+          },
+          "index": false
+        },
+        {
+          "name": "treasury",
+          "type": {
+            "option": "publicKey"
+          },
+          "index": false
+        },
+        {
+          "name": "timestamp",
+          "type": "i64",
+          "index": false
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidPlatformFee",
+      "msg": "Invalid platform fee (must be <= 10000 basis points)"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidPrice",
+      "msg": "Invalid price (must be > 0)"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidMaxSupply",
+      "msg": "Invalid max supply (must be > 0)"
+    },
+    {
+      "code": 6003,
+      "name": "MetadataUriTooLong",
+      "msg": "Metadata URI too long (max 100 characters)"
+    },
+    {
+      "code": 6004,
+      "name": "AppNotActive",
+      "msg": "App is not active"
+    },
+    {
+      "code": 6005,
+      "name": "MaxSupplyReached",
+      "msg": "Maximum supply reached"
+    },
+    {
+      "code": 6006,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6007,
+      "name": "UnauthorizedCreator",
+      "msg": "Unauthorized creator"
+    },
+    {
+      "code": 6008,
+      "name": "UnauthorizedAuthority",
+      "msg": "Unauthorized authority"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidCreator",
+      "msg": "Invalid creator provided"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidTreasury",
+      "msg": "Invalid treasury provided"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidDefaiMint",
+      "msg": "Invalid DEFAI mint provided"
+    }
+  ]
+}
