@@ -54,3 +54,17 @@ pids
 *.pid
 *.seed
 *.pid.lock
+
+# Solana test validator data
+test-ledger/
+.anchor/
+.cache/
+
+# Solana build artifacts
+target/deploy/*.so
+*.so
+deployed-programs.json
+
+# Admin and test keypairs (keep these secure!)
+admin-keypair.json
+*-keypair.json
