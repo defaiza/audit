@@ -1,6 +1,5 @@
 import { useUnifiedTests } from '@/hooks/useUnifiedTests';
 import { useState } from 'react';
-import { WalletValidator } from './WalletValidator';
 
 export function UnifiedTestPanel() {
   const {
@@ -52,8 +51,7 @@ export function UnifiedTestPanel() {
   };
 
   return (
-    <WalletValidator requireAdmin={true}>
-      <div className="bg-gray-900 rounded-lg p-6 space-y-6">
+    <div className="bg-gray-900 rounded-lg p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-white">Unified Test Panel</h2>
         <div className="flex gap-2">
@@ -196,7 +194,6 @@ export function UnifiedTestPanel() {
           <li>Run Security tests to validate program security</li>
         </ol>
       </div>
-    </div>
-    </WalletValidator>
+          </div>
   );
 } 

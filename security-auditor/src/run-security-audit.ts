@@ -110,9 +110,16 @@ async function main() {
       });
     }
 
-    // Save report to file
-    const timestamp = Date.now();
-    const reportPath = path.join(__dirname, `../security-audit-${timestamp}.json`);
+    // Save report to file using report manager
+    const { reportManager } = await import('./utils/report-manager');
+    const jsonFilename = reportManager.generateFilename('json');
+    const reportPath = path.join(__dirname, '..', 'reports', jsonFilename);
+    
+    // Ensure reports directory exists
+    if (!fs.existsSync(path.dirname(reportPath))) {
+      fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    }
+    
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
     
     // Generate PDF and HTML reports

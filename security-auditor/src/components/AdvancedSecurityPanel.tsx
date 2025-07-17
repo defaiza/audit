@@ -8,6 +8,7 @@ import { SecurityMonitor } from './SecurityMonitor'
 import { AuditReportGenerator } from './AuditReportGenerator'
 import { AttackSuccessDetector } from './AttackSuccessDetector'
 import { PerformanceBenchmark } from './PerformanceBenchmark'
+import { TestImplementationStatus } from './TestImplementationStatus'
 import { PROGRAMS } from '@/utils/constants'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
@@ -26,7 +27,7 @@ interface SecurityTestResult {
 export function AdvancedSecurityPanel() {
   const { connection } = useConnection()
   const wallet = useWallet()
-  const [activeTab, setActiveTab] = useState<'init' | 'attack' | 'admin' | 'monitor' | 'detect' | 'perf' | 'report'>('init')
+  const [activeTab, setActiveTab] = useState<'init' | 'attack' | 'admin' | 'monitor' | 'detect' | 'perf' | 'report' | 'implementation'>('init')
   const [isAdminWallet, setIsAdminWallet] = useState(false)
   const [adminKeypair, setAdminKeypair] = useState<Keypair | null>(null)
   const [testResults, setTestResults] = useState<SecurityTestResult[]>([])
@@ -104,7 +105,8 @@ export function AdvancedSecurityPanel() {
     { id: 'monitor', label: '📊 Live Monitor', description: 'Real-time security monitoring' },
     { id: 'detect', label: '🔍 Attack Detection', description: 'Automated vulnerability detection' },
     { id: 'perf', label: '⚡ Performance', description: 'Benchmark gas costs & optimization' },
-    { id: 'report', label: '📋 Audit Report', description: 'Generate comprehensive reports' }
+    { id: 'report', label: '📋 Audit Report', description: 'Generate comprehensive reports' },
+    { id: 'implementation', label: '📊 Test Status', description: 'View test implementation details' }
   ]
 
   return (
@@ -269,6 +271,10 @@ export function AdvancedSecurityPanel() {
             connection={connection}
             programs={PROGRAMS}
           />
+        )}
+
+        {activeTab === 'implementation' && (
+          <TestImplementationStatus />
         )}
       </div>
 

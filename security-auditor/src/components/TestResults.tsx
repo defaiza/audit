@@ -1,6 +1,7 @@
 import { FC } from 'react'
 import { CheckCircleIcon, XCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/solid'
 import { TestResult } from '@/utils/program-test'
+import { getTestImplementationStatus, formatImplementationStatus } from '@/utils/test-metadata'
 
 interface Props {
   programName: string
@@ -65,7 +66,21 @@ export const TestResults: FC<Props> = ({ programName, results, onClose }) => {
                 <div className="flex items-start space-x-3">
                   <div className="mt-0.5">{getIcon(result.status)}</div>
                   <div className="flex-1">
-                    <h3 className="font-semibold text-white">{result.scenario}</h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-white">{result.scenario}</h3>
+                      {(() => {
+                        const testMeta = getTestImplementationStatus(result.scenario.toLowerCase().replace(/\s+/g, '_'));
+                        if (testMeta) {
+                          const statusFormat = formatImplementationStatus(testMeta.implementationStatus);
+                          return (
+                            <span className={`text-xs px-2 py-1 rounded ${statusFormat.color} bg-opacity-20`}>
+                              {statusFormat.icon} {statusFormat.label}
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                     <p className={`text-sm mt-1 ${getStatusColor(result.status)}`}>
                       {result.message}
                     </p>

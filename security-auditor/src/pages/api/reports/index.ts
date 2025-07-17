@@ -1,63 +1,35 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import fs from 'fs';
-import path from 'path';
+import { reportManager } from '@/utils/report-manager';
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-  
-  try {
-    const reportsDir = path.join(process.cwd(), 'reports');
-    const demoReportsDir = path.join(process.cwd(), 'demo-reports');
-    
-    const reports: any[] = [];
-    
-    // Check main reports directory
-    if (fs.existsSync(reportsDir)) {
-      const files = fs.readdirSync(reportsDir);
-      files.forEach(file => {
-        if (file.endsWith('.html') || file.endsWith('.md')) {
-          const stats = fs.statSync(path.join(reportsDir, file));
-          reports.push({
-            filename: file,
-            timestamp: stats.mtime,
-            type: file.endsWith('.html') ? 'html' : 'markdown',
-            size: formatFileSize(stats.size),
-            directory: 'reports'
-          });
-        }
-      });
-    }
-    
-    // Check demo reports directory
-    if (fs.existsSync(demoReportsDir)) {
-      const files = fs.readdirSync(demoReportsDir);
-      files.forEach(file => {
-        if (file.endsWith('.html') || file.endsWith('.md')) {
-          const stats = fs.statSync(path.join(demoReportsDir, file));
-          reports.push({
-            filename: file,
-            timestamp: stats.mtime,
-            type: file.endsWith('.html') ? 'html' : 'markdown',
-            size: formatFileSize(stats.size),
-            directory: 'demo-reports'
-          });
-        }
-      });
-    }
-    
-    // Sort by timestamp, newest first
-    reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
-    res.status(200).json({ reports });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-}
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method === 'GET') {
+    try {
+      const {
+        page = '1',
+        pageSize = '10',
+        sortBy = 'date',
+        sortOrder = 'desc',
+        format = 'all',
+        startDate,
+        endDate
+      } = req.query;
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      const result = await reportManager.listReports({
+        page: parseInt(page as string),
+        pageSize: parseInt(pageSize as string),
+        sortBy: sortBy as any,
+        sortOrder: sortOrder as any,
+        format: format as any,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined
+      });
+
+      res.status(200).json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  } else {
+    res.setHeader('Allow', ['GET']);
+    res.status(405).end(`Method ${req.method} Not Allowed`);
+  }
 } 

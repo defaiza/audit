@@ -513,8 +513,9 @@ export class PDFReportGenerator {
 
   // Save report to file system
   async saveReportToFile(report: ComprehensiveTestReport, format: 'pdf' | 'html' = 'pdf'): Promise<string> {
-    const timestamp = new Date(report.timestamp).toISOString().replace(/[:.]/g, '-');
-    const filename = `security-audit-${timestamp}.${format}`;
+    // Use report manager for consistent filename generation
+    const { reportManager } = await import('./report-manager');
+    const filename = reportManager.generateFilename(format);
     
     if (typeof window !== 'undefined') {
       // Browser environment
