@@ -7,45 +7,46 @@ export default function CurrentReportPage() {
   const [reportContent, setReportContent] = useState<string>('');
 
   useEffect(() => {
+    const fetchLatestReport = async () => {
+      try {
+        // Get list of reports
+        const response = await fetch('/api/reports');
+        const data = await response.json();
+        
+        if (data.reports && data.reports.length > 0) {
+          // Get the most recent HTML report
+          const htmlReports = data.reports.filter((r: string) => r.endsWith('.html'));
+          
+          if (htmlReports.length > 0) {
+            // Sort by filename (which includes timestamp) to get the latest
+            const latestReport = htmlReports.sort().reverse()[0];
+            
+            // Fetch the report content
+            const reportResponse = await fetch(`/api/reports/${encodeURIComponent(latestReport)}`);
+            const reportData = await reportResponse.json();
+            
+            setReportContent(reportData.content);
+          } else {
+            setReportContent('<div style="padding: 20px; color: #666;">No HTML reports found. Run an audit to generate a report.</div>');
+          }
+        } else {
+          setReportContent('<div style="padding: 20px; color: #666;">No reports available. Run an audit to generate a report.</div>');
+        }
+      } catch (error) {
+        console.error('Error fetching report:', error);
+        setReportContent('<div style="padding: 20px; color: #f00;">Error loading report. Please try again.</div>');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchLatestReport();
   }, []);
-
-  const fetchLatestReport = async () => {
-    try {
-      // Get list of reports
-      const response = await fetch('/api/reports');
-      const data = await response.json();
-      
-      if (data.reports && data.reports.length > 0) {
-        // Get the most recent HTML report
-        const htmlReports = data.reports.filter((r: any) => r.type === 'html');
-        if (htmlReports.length > 0) {
-          // Load the first (most recent) report
-          const reportResponse = await fetch(`/api/reports/${htmlReports[0].filename}`);
-          const content = await reportResponse.text();
-          setReportContent(content);
-          setLoading(false);
-        } else {
-          // No HTML reports, redirect to reports page
-          router.push('/reports');
-        }
-      } else {
-        // No reports found, redirect to reports page
-        router.push('/reports');
-      }
-    } catch (error) {
-      console.error('Error loading report:', error);
-      router.push('/reports');
-    }
-  };
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading latest security report...</p>
-        </div>
+        <div className="text-white text-xl">Loading latest report...</div>
       </div>
     );
   }

@@ -1,0 +1,159 @@
+{
+  "timestamp": "2025-07-17T16:17:15.339Z",
+  "summary": {
+    "totalPassed": 3,
+    "totalFailed": 4,
+    "successRate": 42.857142857142854
+  },
+  "results": {
+    "Deployment Tests": [
+      {
+        "test": "Check all programs deployed",
+        "program": "ALL",
+        "status": "success",
+        "message": "All programs are deployed",
+        "details": {
+          "SWAP": true,
+          "STAKING": true,
+          "ESTATE": true,
+          "APP_FACTORY": true
+        },
+        "duration": 5
+      }
+    ],
+    "Initialization Tests": [
+      {
+        "test": "Initialize Program State",
+        "program": "SWAP",
+        "status": "error",
+        "message": "AnchorError occurred. Error Code: DeclaredProgramIdMismatch. Error Number: 4100. Error Message: The declared program id does not match the actual program id.",
+        "error": {
+          "errorLogs": [
+            "Program log: AnchorError occurred. Error Code: DeclaredProgramIdMismatch. Error Number: 4100. Error Message: The declared program id does not match the actual program id."
+          ],
+          "logs": [
+            "Program 877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm invoke [1]",
+            "Program log: AnchorError occurred. Error Code: DeclaredProgramIdMismatch. Error Number: 4100. Error Message: The declared program id does not match the actual program id.",
+            "Program 877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm consumed 3907 of 200000 compute units",
+            "Program 877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm failed: custom program error: 0x1004"
+          ],
+          "error": {
+            "errorCode": {
+              "code": "DeclaredProgramIdMismatch",
+              "number": 4100
+            },
+            "errorMessage": "The declared program id does not match the actual program id"
+          },
+          "_programErrorStack": {
+            "stack": [
+              "877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm"
+            ]
+          }
+        },
+        "duration": 1414
+      },
+      {
+        "test": "Initialize Program State",
+        "program": "STAKING",
+        "status": "error",
+        "message": "Invalid arguments: programState not provided.",
+        "error": {},
+        "duration": 463
+      },
+      {
+        "test": "Initialize Program State",
+        "program": "ESTATE",
+        "status": "error",
+        "message": "AnchorError occurred. Error Code: DeclaredProgramIdMismatch. Error Number: 4100. Error Message: The declared program id does not match the actual program id.",
+        "error": {
+          "errorLogs": [
+            "Program log: AnchorError occurred. Error Code: DeclaredProgramIdMismatch. Error Number: 4100. Error Message: The declared program id does not match the actual program id."
+          ],
+          "logs": [
+            "Program J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8 invoke [1]",
+            "Program log: AnchorError occurred. Error Code: DeclaredProgramIdMismatch. Error Number: 4100. Error Message: The declared program id does not match the actual program id.",
+            "Program J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8 consumed 2505 of 200000 compute units",
+            "Program J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8 failed: custom program error: 0x1004"
+          ],
+          "error": {
+            "errorCode": {
+              "code": "DeclaredProgramIdMismatch",
+              "number": 4100
+            },
+            "errorMessage": "The declared program id does not match the actual program id"
+          },
+          "_programErrorStack": {
+            "stack": [
+              "J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8"
+            ]
+          }
+        },
+        "duration": 5
+      },
+      {
+        "test": "Initialize Program State",
+        "program": "APP_FACTORY",
+        "status": "error",
+        "message": "AnchorError occurred. Error Code: DeclaredProgramIdMismatch. Error Number: 4100. Error Message: The declared program id does not match the actual program id.",
+        "error": {
+          "errorLogs": [
+            "Program log: AnchorError occurred. Error Code: DeclaredProgramIdMismatch. Error Number: 4100. Error Message: The declared program id does not match the actual program id."
+          ],
+          "logs": [
+            "Program 4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3 invoke [1]",
+            "Program log: AnchorError occurred. Error Code: DeclaredProgramIdMismatch. Error Number: 4100. Error Message: The declared program id does not match the actual program id.",
+            "Program 4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3 consumed 3125 of 200000 compute units",
+            "Program 4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3 failed: custom program error: 0x1004"
+          ],
+          "error": {
+            "errorCode": {
+              "code": "DeclaredProgramIdMismatch",
+              "number": 4100
+            },
+            "errorMessage": "The declared program id does not match the actual program id"
+          },
+          "_programErrorStack": {
+            "stack": [
+              "4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3"
+            ]
+          }
+        },
+        "duration": 943
+      }
+    ],
+    "Basic Security Tests": [
+      {
+        "test": "Unauthorized admin access",
+        "program": "ALL",
+        "status": "success",
+        "message": "Admin access controls working correctly",
+        "duration": 0
+      },
+      {
+        "test": "Program account validation",
+        "program": "ALL",
+        "status": "success",
+        "message": "Program accounts validated",
+        "details": [
+          {
+            "program": "SWAP",
+            "accountCount": 0
+          },
+          {
+            "program": "STAKING",
+            "accountCount": 0
+          },
+          {
+            "program": "ESTATE",
+            "accountCount": 0
+          },
+          {
+            "program": "APP_FACTORY",
+            "accountCount": 0
+          }
+        ],
+        "duration": 33
+      }
+    ]
+  }
+}

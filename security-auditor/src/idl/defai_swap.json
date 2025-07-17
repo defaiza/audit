@@ -430,6 +430,121 @@
           "type": {
             "vec": "string"
           }
+        },
+        {
+          "name": "ogTier0MerkleRoot",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "airdropMerkleRoot",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "swapOgTier0ForPnftV6",
+      "docs": [
+        "Function 1: For MAY20DEFAIHolders.csv - Mints NFT and provides 1:1 vesting from Quantity column"
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "collectionConfig",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "nftMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "nftTokenAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "bonusState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "vestingState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "escrow",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "ogTier0Claim",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram2022",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "recentBlockhashes",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "vestingAmount",
+          "type": "u64"
+        },
+        {
+          "name": "merkleProof",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "metadataUri",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
         }
       ]
     },
@@ -694,6 +809,93 @@
         },
         {
           "name": "tokenProgram2022",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimAirdrop",
+      "docs": [
+        "Function 2: For 10_1AIR-Sheet1.csv - NO NFT minting, only vesting of AIRDROP column amount",
+        "This is separate from OG tier 0 and doesn't involve any NFT minting"
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "airdropVesting",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "collectionConfig",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "merkleProof",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "claimVestedAirdrop",
+      "accounts": [
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "airdropVesting",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "userDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "escrowTokenAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "defaiMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "escrow",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
           "isMut": false,
           "isSigner": false
         }
@@ -1105,6 +1307,24 @@
                 5
               ]
             }
+          },
+          {
+            "name": "ogTier0MerkleRoot",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "airdropMerkleRoot",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }
@@ -1221,6 +1441,54 @@
           }
         ]
       }
+    },
+    {
+      "name": "OgTier0Claim",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "claimer",
+            "type": "publicKey"
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AirdropVesting",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "beneficiary",
+            "type": "publicKey"
+          },
+          {
+            "name": "totalAmount",
+            "type": "u64"
+          },
+          {
+            "name": "releasedAmount",
+            "type": "u64"
+          },
+          {
+            "name": "startTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "endTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "lastClaimedTimestamp",
+            "type": "i64"
+          }
+        ]
+      }
     }
   ],
   "types": [
@@ -1328,6 +1596,12 @@
           },
           {
             "name": "TimelockNotExpired"
+          },
+          {
+            "name": "NotOnOgWhitelist"
+          },
+          {
+            "name": "OgTier0AlreadyClaimed"
           }
         ]
       }
@@ -1513,6 +1787,56 @@
           "index": false
         }
       ]
+    },
+    {
+      "name": "AirdropClaimed",
+      "fields": [
+        {
+          "name": "user",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "amount",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "vestingStart",
+          "type": "i64",
+          "index": false
+        },
+        {
+          "name": "vestingEnd",
+          "type": "i64",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "AirdropVestingClaimed",
+      "fields": [
+        {
+          "name": "user",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "amountClaimed",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "totalVested",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "timestamp",
+          "type": "i64",
+          "index": false
+        }
+      ]
     }
   ],
   "errors": [
@@ -1526,5 +1850,9 @@
       "name": "InvalidVrfAccount",
       "msg": "Invalid VRF account"
     }
-  ]
+  ],
+  "metadata": {
+    "address": "877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm"
+  },
+  "address": "877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm"
 }

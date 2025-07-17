@@ -3,13 +3,14 @@ import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
 import { PhantomWalletAdapter } from '@solana/wallet-adapter-wallets'
 import { clusterApiUrl } from '@solana/web3.js'
+import { getRpcEndpoint, getWsEndpoint } from '@/utils/cluster-config'
 
 interface Props {
   children: ReactNode
 }
 
 export const WalletContextProvider: FC<Props> = ({ children }) => {
-  const endpoint = useMemo(() => process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'http://localhost:8899', [])
+  const endpoint = useMemo(() => getRpcEndpoint(), [])
   
   const wallets = useMemo(
     () => [new PhantomWalletAdapter()],

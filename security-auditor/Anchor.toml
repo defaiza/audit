@@ -3,10 +3,10 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-defai_swap = "2rpNRpFnZEbb9Xoonieg7THkKnYEQhZoSK8bKNtVaVLS"
-defai_staking = "CyYfX3MjkuQBTpD8N3KLXBAr8Nik89f63FZ3jFVSMd6s"
-defai_estate = "HYJe4U2DToJCjb5T8tysN4784twLUk48dUjPGD7dKYut"
-defai_app_factory = "AzcDoYYY1cHCd3faCKd8tG76ESUnuRz8jVBXEcxFwznQ"
+defai_swap = "877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm"
+defai_staking = "CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG"
+defai_estate = "J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8"
+defai_app_factory = "4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3"
 
 [registry]
 url = "https://api.apr.dev"

@@ -8,7 +8,7 @@ describe("defai-programs", () => {
   anchor.setProvider(provider);
 
   it("defai_swap is deployed", async () => {
-    const programId = new anchor.web3.PublicKey("3WeYbjGoiTQ6qZ8s9Ek6sUZCy2FzG7b9NbGfbVCtHS2n");
+    const programId = new anchor.web3.PublicKey("877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm");
     const accountInfo = await provider.connection.getAccountInfo(programId);
     expect(accountInfo).to.not.be.null;
     expect(accountInfo?.executable).to.be.true;
@@ -16,7 +16,7 @@ describe("defai-programs", () => {
   });
 
   it("defai_staking is deployed", async () => {
-    const programId = new anchor.web3.PublicKey("3sKj7jgDkiT3hroWho3YZSWAfcmpXXucNKipN4vC3EFM");
+    const programId = new anchor.web3.PublicKey("CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG");
     const accountInfo = await provider.connection.getAccountInfo(programId);
     expect(accountInfo).to.not.be.null;
     expect(accountInfo?.executable).to.be.true;
@@ -24,7 +24,7 @@ describe("defai-programs", () => {
   });
 
   it("defai_estate is deployed", async () => {
-    const programId = new anchor.web3.PublicKey("2zkarMr8w1k6t1jjcZvmcfVPoFnKy3b1kbxEZH6aATJi");
+    const programId = new anchor.web3.PublicKey("J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8");
     const accountInfo = await provider.connection.getAccountInfo(programId);
     expect(accountInfo).to.not.be.null;
     expect(accountInfo?.executable).to.be.true;
@@ -32,7 +32,7 @@ describe("defai-programs", () => {
   });
 
   it("defai_app_factory is deployed", async () => {
-    const programId = new anchor.web3.PublicKey("Ckp11QQpgdP8poYAPVdVjaA5yqfk9Kc4Bd3zmKfzhFAZ");
+    const programId = new anchor.web3.PublicKey("4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3");
     const accountInfo = await provider.connection.getAccountInfo(programId);
     expect(accountInfo).to.not.be.null;
     expect(accountInfo?.executable).to.be.true;

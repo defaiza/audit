@@ -153,7 +153,7 @@ export class ProgramInitializer {
 
   async initializeSwap(defaiMint: PublicKey, rewardsMint: PublicKey): Promise<InitializationResult> {
     try {
-      const programId = new PublicKey('3WeYbjGoiTQ6qZ8s9Ek6sUZCy2FzG7b9NbGfbVCtHS2n')
+      const programId = new PublicKey('877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm')
       const program = new Program(defaiSwapIdl as Idl, programId, this.provider)
       
       // PDAs
@@ -215,7 +215,7 @@ export class ProgramInitializer {
 
   async initializeStaking(defaiMint: PublicKey): Promise<InitializationResult> {
     try {
-      const programId = new PublicKey('3sKj7jgDkiT3hroWho3YZSWAfcmpXXucNKipN4vC3EFM')
+      const programId = new PublicKey('CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG')
       const program = new Program(defaiStakingIdl as Idl, programId, this.provider)
       
       // PDAs
@@ -262,7 +262,7 @@ export class ProgramInitializer {
 
   async initializeEstate(): Promise<InitializationResult> {
     try {
-      const programId = new PublicKey('2zkarMr8w1k6t1jjcZvmcfVPoFnKy3b1kbxEZH6aATJi')
+      const programId = new PublicKey('J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8')
       const program = new Program(defaiEstateIdl as Idl, programId, this.provider)
       
       // PDAs
@@ -305,7 +305,7 @@ export class ProgramInitializer {
 
   async initializeAppFactory(defaiMint: PublicKey): Promise<InitializationResult> {
     try {
-      const programId = new PublicKey('Ckp11QQpgdP8poYAPVdVjaA5yqfk9Kc4Bd3zmKfzhFAZ')
+      const programId = new PublicKey('4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3')
       const program = new Program(defaiAppFactoryIdl as Idl, programId, this.provider)
       
       // PDAs

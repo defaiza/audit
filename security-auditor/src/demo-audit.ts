@@ -16,7 +16,7 @@ interface TestSuiteReport {
   programBreakdown?: any;
   securityScore?: number;
 }
-import { generatePDFReport } from './utils/pdf-report-generator';
+import { PDFReportGenerator } from './utils/pdf-report-generator';
 
 /**
  * Demo script to show sample audit results without running actual tests
@@ -126,7 +126,8 @@ async function runDemo() {
 
   // Generate report
   console.log('📄 Generating demo report...\n');
-  const reportPath = await generatePDFReport(sampleReport, './demo-reports');
+  const generator = new PDFReportGenerator();
+  const reportPath = await generator.saveReportToFile(sampleReport as any, 'html');
 
   // Display summary
   console.log('='.repeat(70));

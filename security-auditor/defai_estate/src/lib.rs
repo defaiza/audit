@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use anchor_spl::associated_token::AssociatedToken;
 
-declare_id!("5uSkqdymvdisnz5542buDEoriDsvopAwym9WpccuTpjg");
+declare_id!("3WN7Eiq5pCGdoCXJW4jf8NygqPv8FzTvwXZArHtYFKYV");
 
 // Estate Seeds
 pub const ESTATE_SEED: &[u8] = b"estate";

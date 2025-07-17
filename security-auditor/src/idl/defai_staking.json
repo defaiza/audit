@@ -336,6 +336,32 @@
       "args": []
     },
     {
+      "name": "updateDefaiMint",
+      "accounts": [
+        {
+          "name": "programState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "authority",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "newDefaiMint",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "newMint",
+          "type": "publicKey"
+        }
+      ]
+    },
+    {
       "name": "pauseProgram",
       "accounts": [
         {
@@ -670,6 +696,31 @@
           "index": false
         }
       ]
+    },
+    {
+      "name": "DefaiMintUpdatedEvent",
+      "fields": [
+        {
+          "name": "oldMint",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "newMint",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "authority",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "timestamp",
+          "type": "i64",
+          "index": false
+        }
+      ]
     }
   ],
   "errors": [
@@ -722,6 +773,15 @@
       "code": 6009,
       "name": "TimelockNotExpired",
       "msg": "Timelock not expired"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidMint",
+      "msg": "Invalid mint address"
     }
-  ]
+  ],
+  "metadata": {
+    "address": "CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG"
+  },
+  "address": "CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG"
 }

@@ -2,6 +2,7 @@ import { FC, ReactNode } from 'react'
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
 import { ShieldCheckIcon } from '@heroicons/react/24/solid'
 import { ClientOnly } from './ClientOnly'
+import { ClusterSelector } from './ClusterSelector'
 
 interface Props {
   children: ReactNode
@@ -17,9 +18,16 @@ export const Layout: FC<Props> = ({ children }) => {
               <ShieldCheckIcon className="h-8 w-8 text-defai-primary" />
               <h1 className="text-xl font-bold text-white">DeFAI Security Auditor</h1>
             </div>
-            <ClientOnly>
-              <WalletMultiButton />
-            </ClientOnly>
+            <div className="flex items-center space-x-4">
+              <ClientOnly>
+                <div className="w-48">
+                  <ClusterSelector />
+                </div>
+              </ClientOnly>
+              <ClientOnly>
+                <WalletMultiButton />
+              </ClientOnly>
+            </div>
           </div>
         </div>
       </header>

@@ -9,6 +9,7 @@ import defaiEstateIdl from '@/idl/defai_estate.json'
 import defaiAppFactoryIdl from '@/idl/defai_app_factory.json'
 import { SecurityTestEnvironment } from '@/utils/test-environment'
 import { SafeModeAttackTester, createSafeTester } from '@/utils/safe-mode-testing'
+import { useProgramStatus } from '@/hooks/useProgramStatus'
 
 interface AttackVectorTesterProps {
   connection: Connection

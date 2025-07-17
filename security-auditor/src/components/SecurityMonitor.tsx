@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { PROGRAMS } from '@/utils/constants'
 import { DETECTION_RULES, type VulnerabilityReport } from './AttackSuccessDetector'
+import { ErrorHandler } from '../utils/error-handler'
+import { ErrorModal } from './ErrorModal'
 
 interface SecurityMonitorProps {
   connection: Connection
@@ -49,6 +51,8 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [enableAttackDetection, setEnableAttackDetection] = useState(true)
   const [attackTestResults, setAttackTestResults] = useState<Map<string, VulnerabilityReport>>(new Map())
+  const [errorModalData, setErrorModalData] = useState<any>(null)
+  const [isErrorModalOpen, setIsErrorModalOpen] = useState(false)
 
   const initializeMetrics = () => {
     const initialMetrics: SecurityMetric[] = [
@@ -184,8 +188,14 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
         suspiciousActivity.push(`Slow response time: ${responseTime}ms`)
       }
 
-    } catch (error) {
-      suspiciousActivity.push(`Connection error: ${error}`)
+    } catch (error: any) {
+      // Handle connection errors with more detail
+      const errorMessage = error?.message || 'Unknown error'
+      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('ECONNREFUSED')) {
+        suspiciousActivity.push('Validator connection failed')
+      } else {
+        suspiciousActivity.push(`Connection error: ${errorMessage}`)
+      }
     }
 
     return {
@@ -336,6 +346,13 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
             program: programInfo.name,
             details: { error }
           })
+          
+          // Show detailed error if needed
+          const errorDetails = ErrorHandler.showErrorModal(error, `Checking ${programInfo.name}`)
+          if (errorDetails.code === 'PROGRAM_NOT_DEPLOYED' || errorDetails.code === 'ACCOUNT_NOT_FOUND') {
+            setErrorModalData(errorDetails)
+            setIsErrorModalOpen(true)
+          }
         }
       }
 
@@ -373,6 +390,9 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
         program: 'Security Monitor',
         details: { error }
       })
+      
+      // Handle critical errors
+      await ErrorHandler.handle(error, 'Security scan')
     }
   }
 
@@ -720,6 +740,16 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
           </div>
         </div>
       </div>
+
+      {/* Error Modal */}
+      <ErrorModal
+        error={errorModalData}
+        isOpen={isErrorModalOpen}
+        onClose={() => {
+          setIsErrorModalOpen(false)
+          setErrorModalData(null)
+        }}
+      />
     </div>
   )
 } 

@@ -1,23 +1,29 @@
 [workspace]
-resolver = "2"
 members = [
     "defai_swap",
-    "defai_staking", 
+    "defai_staking",
     "defai_estate",
     "defai_app_factory"
 ]
-
-[workspace.dependencies]
-anchor-lang = { version = "0.29.0", features = ["init-if-needed"] }
-anchor-spl = "0.29.0"
-solana-program = "1.17.0"
+exclude = [
+    "programs/.claude",
+    "programs/security-auditor",
+    "programs/security-audit",
+    "programs/archive_backups"
+]
+resolver = "2"
 
 [profile.release]
 overflow-checks = true
 lto = "fat"
 codegen-units = 1
-
 [profile.release.build-override]
 opt-level = 3
 incremental = false
 codegen-units = 1
+
+[workspace.dependencies]
+anchor-lang = { version = "0.29.0", features = ["init-if-needed"] }
+anchor-spl = { version = "0.29.0", features = ["token_2022"] }
+solana-program = "1.17.0"
+

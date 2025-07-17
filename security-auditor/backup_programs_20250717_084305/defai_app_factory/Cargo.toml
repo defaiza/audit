@@ -1,0 +1,23 @@
+[package]
+name = "defai_app_factory"
+version = "0.1.0"
+description = "DEFAI App Factory - SFT-based marketplace for workspace applications"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "defai_app_factory"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang.workspace = true
+anchor-spl.workspace = true
+solana-program.workspace = true
+mpl-token-metadata = "4.1.2"
+mpl-core = "0.7.2" 

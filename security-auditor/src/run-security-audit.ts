@@ -1,8 +1,8 @@
-import { Connection, clusterApiUrl } from '@solana/web3.js';
-// import { runComprehensiveTests } from './utils/comprehensive-test-suite';
-// import { generatePDFReport } from './utils/pdf-report-generator';
+import { Connection, clusterApiUrl, Keypair } from '@solana/web3.js';
+import { ComprehensiveTestSuite } from './utils/comprehensive-tests';
 import * as fs from 'fs';
 import * as path from 'path';
+import { PDFReportGenerator } from './utils/pdf-report-generator';
 
 /**
  * Main entry point for running the DeFAI Security Audit
@@ -40,30 +40,40 @@ async function main() {
     const version = await connection.getVersion();
     console.log(`✅ Connected to Solana ${version['solana-core']}\n`);
 
+    // Load admin keypair
+    const adminKeypairPath = path.join(__dirname, '../admin-keypair.json');
+    let adminKeypair: Keypair;
+    
+    try {
+      const keypairData = JSON.parse(fs.readFileSync(adminKeypairPath, 'utf8'));
+      adminKeypair = Keypair.fromSecretKey(new Uint8Array(keypairData));
+      console.log(`🔑 Using admin wallet: ${adminKeypair.publicKey.toBase58()}\n`);
+    } catch (error) {
+      console.error('❌ Failed to load admin keypair. Make sure admin-keypair.json exists');
+      return;
+    }
+    
+    // Create wallet interface with real signing
+    const wallet = {
+      publicKey: adminKeypair.publicKey,
+      signTransaction: async (tx: any) => {
+        tx.partialSign(adminKeypair);
+        return tx;
+      },
+      signAllTransactions: async (txs: any[]) => {
+        return txs.map((tx: any) => {
+          tx.partialSign(adminKeypair);
+          return tx;
+        });
+      }
+    };
+    
     // Run comprehensive security tests
     console.log('🚀 Starting comprehensive security audit...\n');
-    // TODO: Fix comprehensive test suite
-    console.log('❌ Comprehensive test suite is currently being refactored');
-    console.log('Please run individual tests or use the web interface');
-    return;
-    // const report = await runComprehensiveTests(connection);
+    const testSuite = new ComprehensiveTestSuite(connection, wallet);
+    await testSuite.initialize();
+    const report = await testSuite.runFullSuite();
 
-    /* Commented out until comprehensive test suite is fixed
-    // Display summary
-    console.log('\n' + '='.repeat(70));
-    console.log('AUDIT COMPLETE');
-    console.log('='.repeat(70));
-    console.log(`Total Tests: ${report.summary.totalTests}`);
-    console.log(`Passed: ${report.summary.passed} ✅`);
-    console.log(`Failed: ${report.summary.failed} ❌`);
-    console.log(`Security Score: ${report.securityScore}/100`);
-    console.log(`Execution Time: ${(report.summary.executionTime / 1000).toFixed(1)} seconds`);
-    console.log('='.repeat(70));
-
-    // Generate reports
-    console.log('\n📄 Generating audit reports...');
-    const reportPath = await generatePDFReport(report);
-    
     // Display category breakdown
     console.log('\n📊 Results by Category:');
     console.log('-'.repeat(50));
@@ -90,24 +100,40 @@ async function main() {
     }
 
     // Display failed tests
-    const failedTests = report.results.filter(r => !r.passed);
+    const failedTests = report.results.filter(r => r.status === 'failed' || r.status === 'error');
     if (failedTests.length > 0) {
       console.log('\n❌ Failed Tests:');
       console.log('-'.repeat(70));
       failedTests.forEach(test => {
-        console.log(`• ${test.testName} (${test.category})`);
-        if (test.error) {
-          console.log(`  Error: ${test.error}`);
-        }
+        console.log(`• ${test.test} - ${test.program}`);
+        console.log(`  ${test.message}`);
       });
     }
 
-    console.log('\n✅ Audit complete! Reports have been generated.');
-    console.log(`\n📁 Report location: ${reportPath}`);
+    // Save report to file
+    const timestamp = Date.now();
+    const reportPath = path.join(__dirname, `../security-audit-${timestamp}.json`);
+    fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+    
+    // Generate PDF and HTML reports
+    const generator = new PDFReportGenerator();
+    try {
+      const htmlPath = await generator.saveReportToFile(report, 'html');
+      const pdfPath = await generator.saveReportToFile(report, 'pdf');
+      
+      console.log('\n✅ Audit complete!');
+      console.log('\n📁 Reports saved:');
+      console.log(`   - JSON: ${reportPath}`);
+      console.log(`   - HTML: ${htmlPath}`);
+      console.log(`   - PDF:  ${pdfPath}`);
+    } catch (error) {
+      console.log('\n✅ Audit complete!');
+      console.log(`\n📁 JSON report saved to: ${reportPath}`);
+      console.log('   ⚠️  Failed to generate PDF/HTML reports');
+    }
 
     // Exit with appropriate code
     process.exit(failedTests.length > 0 ? 1 : 0);
-    */
 
   } catch (error: any) {
     console.error('\n❌ Audit failed with error:', error.message);

@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface, transfer_checked, TransferChecked};
 
-declare_id!("6t8UH9GGn3ZRMkFvV5CqSe1Rs9fYzQpeEkv4hbDPG6zd");
+declare_id!("DpAeweyqvHt7iuufYGoJC7oJXbpBNFgeDWCh2jKfwyWd");
 
 // Constants for sustainable economics
 pub const GOLD_MIN: u64 = 10_000_000 * 10u64.pow(6);      // 10M DEFAI
@@ -377,6 +377,34 @@ pub mod defai_staking {
         Ok(())
     }
 
+    pub fn update_defai_mint(
+        ctx: Context<UpdateDefaiMint>,
+        new_mint: Pubkey,
+    ) -> Result<()> {
+        let program_state = &mut ctx.accounts.program_state;
+        let old_mint = program_state.defai_mint;
+        
+        // Ensure the new mint is valid
+        require!(
+            ctx.accounts.new_defai_mint.key() == new_mint,
+            StakingError::InvalidMint
+        );
+        
+        // Update the mint
+        program_state.defai_mint = new_mint;
+        
+        emit!(DefaiMintUpdatedEvent {
+            old_mint,
+            new_mint,
+            authority: ctx.accounts.authority.key(),
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+        
+        msg!("DEFAI mint updated from {} to {}", old_mint, new_mint);
+        
+        Ok(())
+    }
+
     pub fn pause_program(ctx: Context<PauseProgram>, paused: bool) -> Result<()> {
         let program_state = &mut ctx.accounts.program_state;
         program_state.paused = paused;
@@ -683,6 +711,18 @@ pub struct UpdateAuthority<'info> {
 }
 
 #[derive(Accounts)]
+pub struct UpdateDefaiMint<'info> {
+    #[account(
+        mut,
+        has_one = authority @ StakingError::InvalidAuthority
+    )]
+    pub program_state: Account<'info, ProgramState>,
+    pub authority: Signer<'info>,
+    #[account(mut)]
+    pub new_defai_mint: InterfaceAccount<'info, Mint>,
+}
+
+#[derive(Accounts)]
 pub struct PauseProgram<'info> {
     #[account(
         mut,
@@ -768,6 +808,14 @@ pub struct RewardsCompoundedEvent {
     pub timestamp: i64,
 }
 
+#[event]
+pub struct DefaiMintUpdatedEvent {
+    pub old_mint: Pubkey,
+    pub new_mint: Pubkey,
+    pub authority: Pubkey,
+    pub timestamp: i64,
+}
+
 // Error codes
 #[error_code]
 pub enum StakingError {
@@ -791,6 +839,8 @@ pub enum StakingError {
     NoPendingAuthorityChange,
     #[msg("Timelock not expired")]
     TimelockNotExpired,
+    #[msg("Invalid mint address")]
+    InvalidMint,
 }
 
 // Helper functions

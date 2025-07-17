@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 mod purchase_app;
 use purchase_app::*;
 
-declare_id!("4cxwMECNtqo5CEFYEU5aArZDL5CUs64H1imobByYA261");
+declare_id!("FyDBGJFfviW1mqKYWueLQCW4YUm9RmUgQeEYw1izszDA");
 
 // ============================================================================
 // Constants

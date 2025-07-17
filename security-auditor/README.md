@@ -1,125 +1,121 @@
 # DeFAI Security Auditor
 
-A comprehensive security testing and audit dashboard for the DeFAI ecosystem programs on Solana.
-
-## Overview
-
-This security auditor provides automated testing and vulnerability detection for:
-- **DeFAI Swap**: Token swap and NFT tier management
-- **DeFAI Staking**: Token staking with pool-based rewards
-- **DeFAI Estate**: Real estate investment management
-- **DeFAI App Factory**: Application deployment and revenue sharing
-
-## Quick Start
-
-See [LOCAL_TESTING_GUIDE.md](./LOCAL_TESTING_GUIDE.md) for detailed setup instructions.
-
-1. Install dependencies:
-```bash
-npm install
-```
-
-2. Start local Solana validator:
-```bash
-solana-test-validator
-```
-
-3. Deploy programs with admin keypair:
-```bash
-node scripts/deploy-programs.js
-```
-
-4. Start the development server:
-```bash
-npm run dev
-```
-
-5. Open [http://localhost:3000](http://localhost:3000)
-
-**Note**: Import `admin-keypair.json` to your wallet for initialization.
+A specialized frontend application for security auditors to test and validate DeFAI Solana programs.
 
 ## Features
 
-### Security Testing
-- Access control validation
-- Input validation checks
-- Overflow protection verification
-- State consistency tests
-- PDA derivation validation
-- Token account security
-- Reentrancy guard checks
-- Admin timelock verification
+- **Program Testing**: Run automated tests against all DeFAI programs
+- **Security Checklist**: Visual representation of implemented security features
+- **Test Scenarios**: Comprehensive test coverage for each program
+- **Real-time Results**: Instant feedback on test execution
+- **Wallet Integration**: Connect and test with your Solana wallet
 
-### Frontend Dashboard
-- Real-time program status monitoring
-- One-click program initialization
-- Automated security test execution
-- Detailed test result reporting
-- Wallet integration with admin controls
-- Airdrop functionality for testing
+## Programs Covered
 
-### Admin Controls
-- **Admin Wallet**: `4efsLapeRBz4pnqey6vBUECUSD6HmDie4pGzUxhnW1aZ`
-- Deploy/redeploy programs
-- Initialize program states
-- Request test SOL airdrops
+1. **DeFAI Swap** (9.5/10 Ready)
+   - Token swap functionality
+   - NFT exchange with vesting
+   - VRF randomness integration
+   - Referral system
 
-## Architecture
+2. **DeFAI Staking** (9.5/10 Ready)
+   - Tiered staking system
+   - Compound rewards
+   - APY calculations
+   - Escrow management
 
+3. **DeFAI Estate** (9.5/10 Ready)
+   - Digital estate management
+   - Multi-signature operations
+   - Inheritance features
+   - AI trading capabilities
+
+4. **DeFAI App Factory** (7/10 Needs Testing)
+   - Application registration
+   - SFT creation and management
+   - Usage tracking
+   - Monetization features
+
+## Installation
+
+```bash
+# Navigate to the security auditor directory
+cd security-auditor
+
+# Install dependencies
+yarn
+
+# Run the development server
+yarn dev
 ```
-security-auditor/
-├── src/
-│   ├── components/     # React components
-│   ├── utils/         # Testing utilities
-│   ├── idl/           # Program IDLs
-│   └── pages/         # Next.js pages
-├── programs/          # Solana programs
-├── scripts/           # Deployment scripts
-└── admin-keypair.json # Local testing keypair
-```
 
-## Testing Workflow
+The application will be available at `http://localhost:3002`
 
-1. **Setup**: Import admin keypair and connect wallet
-2. **Deploy**: Run deployment script to deploy all programs
-3. **Initialize**: Use frontend button to initialize programs
-4. **Test**: Click "Run Tests" on each program card
-5. **Review**: Analyze test results and security findings
+## Usage
 
-## Program IDs (Localnet)
+1. **Connect Wallet**: Connect your Solana wallet (Phantom recommended)
+2. **Select Program**: Choose a program to test from the dashboard
+3. **Run Tests**: Click "Run Security Tests" to execute the test suite
+4. **Review Results**: Analyze the test results in the popup modal
+5. **Check Security**: Review the security checklist for each program
 
-| Program | ID |
-|---------|-----|
-| DeFAI Swap | `CevRqnM5Jxz21QQfNz9wQEwXAr9nsaasdF1CZUZfcv3N` |
-| DeFAI Staking | `9Et8s8t6o52C4e4BkmJpAf68SfJEtn67LvhGLvdHLijN` |
-| DeFAI Estate | `CVbyAQjUZ2oAofKaZG3mfaK3yHDJDDW3UaeJvj6vkGx2` |
-| DeFAI App Factory | `uosa7o62kupuo2TBHFm36dvpV9JkFsfhXD9tMV8qMM2` |
+## Test Categories
+
+### Basic Tests
+- Program deployment verification
+- IDL availability check
+- Program size validation
+
+### Program-Specific Tests
+- State initialization checks
+- Account validation
+- Transaction simulation
+- Error handling verification
+
+### Security Checks
+- Access control implementation
+- Input validation
+- Overflow protection
+- Event emissions
+- Admin timelocks
+- Multi-signature support
 
 ## Development
 
-### Building Programs
+### Adding New Tests
+
+To add new test scenarios:
+
+1. Update `src/utils/constants.ts` with new test scenarios
+2. Implement test logic in `src/utils/program-test.ts`
+3. Add visual indicators in the UI components
+
+### Customizing Security Checks
+
+Modify the `SECURITY_CHECKS` array in `src/utils/constants.ts` to add or update security requirements.
+
+## Important Notes
+
+- This tool performs read-only operations and simulations
+- Actual security audits require manual code review
+- Test results should be verified independently
+- Always use devnet for testing
+
+## Building for Production
+
 ```bash
-anchor build
+# Build the application
+yarn build
+
+# Start the production server
+yarn start
 ```
 
-### Running Tests
-```bash
-anchor test
-```
+## Contributing
 
-### Cleaning Build
-```bash
-cargo clean
-anchor build
-```
+When contributing to the security auditor:
 
-## Security Considerations
-
-- The included `admin-keypair.json` is for **local testing only**
-- Never use this keypair on mainnet or with real funds
-- Always verify program deployments before initialization
-- Review all test results before production deployment
-
-## License
-
-MIT
+1. Ensure all tests pass
+2. Update documentation
+3. Follow the existing code style
+4. Test on devnet before submitting PRs

@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { SimpleInitializer, InitializationResult } from '@/utils/simple-initialize'
 import toast from 'react-hot-toast'
+import { ErrorHandler, showErrorModal } from '../utils/error-handler'
+import { ErrorModal } from './ErrorModal'
 
 export function InitializeButton() {
   const { connection } = useConnection()
@@ -9,10 +11,17 @@ export function InitializeButton() {
   const [isInitializing, setIsInitializing] = useState(false)
   const [showResults, setShowResults] = useState(false)
   const [results, setResults] = useState<InitializationResult[]>([])
+  const [errorModalData, setErrorModalData] = useState<any>(null)
+  const [isErrorModalOpen, setIsErrorModalOpen] = useState(false)
 
   const handleInitialize = async () => {
     if (!wallet.connected) {
-      toast.error('Please connect your wallet first')
+      const errorDetails = showErrorModal(
+        { code: 'WALLET_NOT_CONNECTED', message: 'Wallet not connected' },
+        'Initialize programs'
+      )
+      setErrorModalData(errorDetails)
+      setIsErrorModalOpen(true)
       return
     }
 
@@ -28,6 +37,7 @@ export function InitializeButton() {
       
       const successCount = initResults.filter(r => r.status === 'success').length
       const skippedCount = initResults.filter(r => r.status === 'skipped').length
+      const errorCount = initResults.filter(r => r.status === 'error').length
       
       if (successCount > 0) {
         toast.success(`Initialized ${successCount} programs successfully!`)
@@ -35,9 +45,22 @@ export function InitializeButton() {
       if (skippedCount > 0) {
         toast(`${skippedCount} programs were already initialized`, { icon: 'ℹ️' })
       }
+      if (errorCount > 0) {
+        // Show detailed error for the first failed program
+        const firstError = initResults.find(r => r.status === 'error')
+        if (firstError?.details) {
+          const errorDetails = showErrorModal(firstError.details, `Initialize ${firstError.program}`)
+          setErrorModalData(errorDetails)
+          setIsErrorModalOpen(true)
+        }
+      }
     } catch (error) {
-      console.error('Initialization error:', error)
-      toast.error('Failed to initialize programs')
+      await ErrorHandler.handle(error, 'Program initialization')
+      
+      // Show detailed error modal for critical errors
+      const errorDetails = showErrorModal(error, 'Initialize programs')
+      setErrorModalData(errorDetails)
+      setIsErrorModalOpen(true)
     } finally {
       setIsInitializing(false)
     }
@@ -124,6 +147,16 @@ export function InitializeButton() {
           ))}
         </div>
       )}
+
+      {/* Error Modal */}
+      <ErrorModal
+        error={errorModalData}
+        isOpen={isErrorModalOpen}
+        onClose={() => {
+          setIsErrorModalOpen(false)
+          setErrorModalData(null)
+        }}
+      />
     </div>
   )
 }

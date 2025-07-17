@@ -495,5 +495,9 @@
       "name": "InvalidDefaiMint",
       "msg": "Invalid DEFAI mint provided"
     }
-  ]
+  ],
+  "metadata": {
+    "address": "4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3"
+  },
+  "address": "4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3"
 }

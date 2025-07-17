@@ -12,7 +12,7 @@ use randomness::*;
 pub mod vrf;
 use vrf::*;
 
-declare_id!("5pmceM9vG9gpLCM8W7wTC92m8GsXnZEpE7wmbbHpFUeT");
+declare_id!("FxtwFmgibGqiiSQgpXy34eoDYjbTaXTCsvpvpzX2VReA");
 
 // Tax configuration constants (basis points = parts per 10_000)
 const INITIAL_TAX_BPS: u16 = 500;     // 5%
@@ -30,10 +30,14 @@ const WHITELIST_ROOT: [u8; 32] = [75, 45, 118, 95, 221, 195, 106, 5, 187, 186, 5
 const VESTING_DURATION: i64 = 90 * 24 * 60 * 60; // 90 days in seconds
 const CLIFF_DURATION: i64 = 2 * 24 * 60 * 60;    // 2 days in seconds
 
+// ============================================
+// LOCKED CONTEXT - DO NOT CHANGE THESE BONUS RANGES EVER
+// These bonus ranges are FINAL and IMMUTABLE
+// ============================================
 // Bonus ranges per tier (basis points)
-const TIER_0_MIN_BONUS: u16 = 0;     // 0%
-const TIER_0_MAX_BONUS: u16 = 0;     // 0% - NO BONUS for OG
-const TIER_1_MIN_BONUS: u16 = 0;     // 0% - Train
+const TIER_0_MIN_BONUS: u16 = 0;     // 0%  - OG tier (No bonus)
+const TIER_0_MAX_BONUS: u16 = 0;     // 0%  - OG tier (No bonus)
+const TIER_1_MIN_BONUS: u16 = 0;     // 0%  - Train
 const TIER_1_MAX_BONUS: u16 = 1500;  // 15% - Train
 const TIER_2_MIN_BONUS: u16 = 1500;  // 15% - Boat
 const TIER_2_MAX_BONUS: u16 = 5000;  // 50% - Boat
@@ -41,6 +45,9 @@ const TIER_3_MIN_BONUS: u16 = 2000;  // 20% - Plane
 const TIER_3_MAX_BONUS: u16 = 10000; // 100% - Plane
 const TIER_4_MIN_BONUS: u16 = 5000;  // 50% - Rocket
 const TIER_4_MAX_BONUS: u16 = 30000; // 300% - Rocket
+// ============================================
+// END LOCKED CONTEXT
+// ============================================
 
 #[program]
 pub mod defai_swap {
@@ -252,6 +259,8 @@ pub mod defai_swap {
         tier_prices: [u64; 5],
         tier_supplies: [u16; 5],
         tier_uri_prefixes: Vec<String>,
+        og_tier_0_merkle_root: [u8; 32],  // For MAY20DEFAIHolders.csv - NFT minting with 1:1 vesting
+        airdrop_merkle_root: [u8; 32],    // For 10_1AIR-Sheet1.csv - Pure vesting, no NFT
     ) -> Result<()> {
         let collection_config = &mut ctx.accounts.collection_config;
         collection_config.authority = ctx.accounts.authority.key();
@@ -269,7 +278,110 @@ pub mod defai_swap {
         collection_config.tier_prices = tier_prices;
         collection_config.tier_supplies = tier_supplies;
         collection_config.tier_minted = [0; 5];
+        collection_config.og_tier_0_merkle_root = og_tier_0_merkle_root;  // MAY20DEFAIHolders merkle root
+        collection_config.airdrop_merkle_root = airdrop_merkle_root;      // 10_1AIR merkle root
         
+        Ok(())
+    }
+
+    /// Function 1: For MAY20DEFAIHolders.csv - Mints NFT and provides 1:1 vesting from Quantity column
+    pub fn swap_og_tier0_for_pnft_v6(
+        ctx: Context<SwapOgTier0ForPnftV6>,
+        vesting_amount: u64,  // The Quantity from MAY20DEFAIHolders.csv for 1:1 vesting
+        merkle_proof: Vec<[u8; 32]>,
+        _metadata_uri: String,
+        _name: String,
+        _symbol: String,
+    ) -> Result<()> {
+        msg!("=== SWAP OG TIER 0 FOR PNFT V6 START ===");
+        
+        let config = &ctx.accounts.collection_config;
+        let og_claim = &mut ctx.accounts.og_tier0_claim;
+        let clock = Clock::get()?;
+        
+        // For MAY20DEFAIHolders.csv: OG Tier 0 holders mint NFT and get 1:1 vesting
+        // Verify user hasn't already claimed their OG tier 0 NFT
+        require!(!og_claim.claimed, ErrorCode::OgTier0AlreadyClaimed);
+        
+        // Verify merkle proof for OG tier 0 whitelist
+        let user_key = ctx.accounts.user.key();
+        let amount_bytes = vesting_amount.to_le_bytes();
+        let leaf_data = [user_key.as_ref(), &amount_bytes].concat();
+        let leaf = solana_program::keccak::hash(&leaf_data);
+        
+        let is_valid = merkle_proof.iter().fold(leaf.0, |acc, proof_elem| {
+            let mut combined = vec![];
+            if acc <= *proof_elem {
+                combined.extend_from_slice(&acc);
+                combined.extend_from_slice(proof_elem);
+            } else {
+                combined.extend_from_slice(proof_elem);
+                combined.extend_from_slice(&acc);
+            }
+            solana_program::keccak::hash(&combined).0
+        }) == config.og_tier_0_merkle_root;
+        
+        require!(is_valid, ErrorCode::NotOnOgWhitelist);
+        
+        // Check tier 0 supply
+        require!(
+            config.tier_minted[0] < config.tier_supplies[0],
+            ErrorCode::NoLiquidity
+        );
+        
+        // No tax for OG tier 0 holders - they mint for free
+        // Generate random bonus using improved randomness
+        let (min_bonus, max_bonus) = get_tier_bonus_range(0);
+        let recent_blockhash = ctx.accounts.recent_blockhashes.data.borrow();
+        let blockhash_bytes: [u8; 32] = recent_blockhash[8..40].try_into().unwrap();
+        
+        let random_value = generate_secure_random(
+            &ctx.accounts.user.key(),
+            &ctx.accounts.nft_mint.key(),
+            &clock,
+            &blockhash_bytes,
+        );
+        let random_bonus = calculate_random_bonus(random_value, min_bonus, max_bonus);
+        
+        // Set up bonus state
+        let bonus_state = &mut ctx.accounts.bonus_state;
+        bonus_state.mint = ctx.accounts.nft_mint.key();
+        bonus_state.tier = 0;
+        bonus_state.bonus_bps = random_bonus;
+        bonus_state.vesting_start = clock.unix_timestamp;
+        bonus_state.vesting_duration = VESTING_DURATION;
+        bonus_state.claimed = false;
+        bonus_state.fee_deducted = 0;
+        
+        // Set up vesting state with the verified vesting amount
+        let vesting_state = &mut ctx.accounts.vesting_state;
+        vesting_state.mint = ctx.accounts.nft_mint.key();
+        vesting_state.total_amount = vesting_amount;
+        vesting_state.released_amount = 0;
+        vesting_state.start_timestamp = clock.unix_timestamp;
+        vesting_state.end_timestamp = clock.unix_timestamp + VESTING_DURATION;
+        vesting_state.last_claimed_timestamp = clock.unix_timestamp;
+        
+        // Mark as claimed for this user
+        og_claim.claimer = ctx.accounts.user.key();
+        og_claim.claimed = true;
+        
+        // Update tier minted count
+        let config = &mut ctx.accounts.collection_config;
+        config.tier_minted[0] += 1;
+        
+        // Emit swap event
+        emit!(SwapExecuted {
+            user: ctx.accounts.user.key(),
+            tier: 0,
+            price: 0, // Free for OG holders
+            tax_amount: 0,
+            bonus_bps: bonus_state.bonus_bps,
+            nft_mint: ctx.accounts.nft_mint.key(),
+            timestamp: clock.unix_timestamp,
+        });
+        
+        msg!("=== SWAP OG TIER 0 FOR PNFT V6 COMPLETE ===");
         Ok(())
     }
 
@@ -506,8 +618,8 @@ pub mod defai_swap {
         let amount_to_transfer = base_price.saturating_sub(bonus_state.fee_deducted);
         
         // Transfer base amount minus fees
-        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
-        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let escrow_seeds = &[b"escrow" as &[u8], &[ctx.accounts.escrow.bump][..]];
+        let signer_seeds = &[&escrow_seeds[..]];
         
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program_2022.to_account_info(),
@@ -540,6 +652,121 @@ pub mod defai_swap {
             amount_to_transfer
         );
         msg!("=== REDEEM V6 COMPLETE ===");
+        Ok(())
+    }
+
+    /// Function 2: For 10_1AIR-Sheet1.csv - NO NFT minting, only vesting of AIRDROP column amount
+    /// This is separate from OG tier 0 and doesn't involve any NFT minting
+    pub fn claim_airdrop(
+        ctx: Context<ClaimAirdrop>,
+        amount: u64,  // The AIRDROP column amount from 10_1AIR-Sheet1.csv
+        merkle_proof: Vec<[u8; 32]>,
+    ) -> Result<()> {
+        msg!("=== CLAIM AIRDROP START (10:1 Air Recipients - No NFT) ===");
+        
+        let airdrop_vesting = &mut ctx.accounts.airdrop_vesting;
+        let clock = Clock::get()?;
+        let config = &ctx.accounts.collection_config;
+        
+        // Verify user hasn't already claimed
+        require!(airdrop_vesting.beneficiary == Pubkey::default(), ErrorCode::AlreadyClaimed);
+        
+        // Verify merkle proof
+        let user_key = ctx.accounts.user.key();
+        let amount_bytes = amount.to_le_bytes();
+        let leaf_data = [user_key.as_ref(), &amount_bytes].concat();
+        let leaf = solana_program::keccak::hash(&leaf_data);
+        
+        let is_valid = merkle_proof.iter().fold(leaf.0, |acc, proof_elem| {
+            let mut combined = vec![];
+            if acc <= *proof_elem {
+                combined.extend_from_slice(&acc);
+                combined.extend_from_slice(proof_elem);
+            } else {
+                combined.extend_from_slice(proof_elem);
+                combined.extend_from_slice(&acc);
+            }
+            solana_program::keccak::hash(&combined).0
+        }) == config.airdrop_merkle_root;
+        
+        require!(is_valid, ErrorCode::InvalidMerkleProof);
+        
+        // Initialize vesting state
+        airdrop_vesting.beneficiary = ctx.accounts.user.key();
+        airdrop_vesting.total_amount = amount;
+        airdrop_vesting.released_amount = 0;
+        airdrop_vesting.start_timestamp = clock.unix_timestamp;
+        airdrop_vesting.end_timestamp = clock.unix_timestamp + VESTING_DURATION;
+        airdrop_vesting.last_claimed_timestamp = clock.unix_timestamp;
+        
+        // Emit event
+        emit!(AirdropClaimed {
+            user: ctx.accounts.user.key(),
+            amount,
+            vesting_start: clock.unix_timestamp,
+            vesting_end: clock.unix_timestamp + VESTING_DURATION,
+        });
+        
+        msg!("=== CLAIM AIRDROP COMPLETE ===");
+        Ok(())
+    }
+
+    pub fn claim_vested_airdrop(ctx: Context<ClaimVestedAirdrop>) -> Result<()> {
+        msg!("=== CLAIM VESTED AIRDROP START ===");
+        
+        let airdrop_vesting = &mut ctx.accounts.airdrop_vesting;
+        let now = Clock::get()?.unix_timestamp;
+        
+        // Check cliff period
+        let cliff_end = airdrop_vesting.start_timestamp + CLIFF_DURATION;
+        require!(now >= cliff_end, ErrorCode::StillInCliff);
+        
+        // Calculate vested amount
+        let elapsed = now - airdrop_vesting.start_timestamp;
+        let duration = airdrop_vesting.end_timestamp - airdrop_vesting.start_timestamp;
+        
+        let vested_amount = if elapsed >= duration {
+            airdrop_vesting.total_amount
+        } else {
+            (airdrop_vesting.total_amount as u128)
+                .checked_mul(elapsed as u128)
+                .ok_or(ErrorCode::MathOverflow)?
+                .checked_div(duration as u128)
+                .ok_or(ErrorCode::MathOverflow)? as u64
+        };
+        
+        let claimable = vested_amount.saturating_sub(airdrop_vesting.released_amount);
+        require!(claimable > 0, ErrorCode::NothingToClaim);
+        
+        // Transfer from escrow to user
+        let escrow_seeds = &[b"escrow" as &[u8], &[ctx.accounts.escrow.bump][..]];
+        let signer_seeds = &[&escrow_seeds[..]];
+        
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.escrow_token_account.to_account_info(),
+                to: ctx.accounts.user_defai_ata.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.defai_mint.to_account_info(),
+            },
+            signer_seeds,
+        );
+        token22::transfer_checked(cpi_ctx, claimable, 6)?;
+        
+        // Update released amount
+        airdrop_vesting.released_amount += claimable;
+        airdrop_vesting.last_claimed_timestamp = now;
+        
+        // Emit event
+        emit!(AirdropVestingClaimed {
+            user: ctx.accounts.user.key(),
+            amount_claimed: claimable,
+            total_vested: vested_amount,
+            timestamp: now,
+        });
+        
+        msg!("=== CLAIM VESTED AIRDROP COMPLETE ===");
         Ok(())
     }
 
@@ -578,8 +805,8 @@ pub mod defai_swap {
         require!(claimable > 0, ErrorCode::NothingToClaim);
         
         // Transfer vested amount
-        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
-        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let escrow_seeds = &[b"escrow" as &[u8], &[ctx.accounts.escrow.bump][..]];
+        let signer_seeds = &[&escrow_seeds[..]];
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program_2022.to_account_info(),
             TransferChecked {
@@ -613,8 +840,8 @@ pub mod defai_swap {
     pub fn admin_withdraw(ctx: Context<AdminWithdraw>, amount: u64) -> Result<()> {
         require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
         
-        let escrow_seeds: &[&[u8]] = &[b"escrow", &[ctx.accounts.escrow.bump]];
-        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
+        let escrow_seeds = &[b"escrow" as &[u8], &[ctx.accounts.escrow.bump][..]];
+        let signer_seeds = &[&escrow_seeds[..]];
         
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
@@ -935,6 +1162,53 @@ pub struct InitializeCollection<'info> {
 }
 
 #[derive(Accounts)]
+pub struct SwapOgTier0ForPnftV6<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub config: Account<'info, Config>,
+    #[account(mut)]
+    pub collection_config: Box<Account<'info, CollectionConfig>>,
+    /// CHECK: NFT mint to be created
+    pub nft_mint: AccountInfo<'info>,
+    #[account(mut)]
+    pub nft_token_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    #[account(
+        init,
+        payer = user,
+        space = 8 + BonusStateV6::LEN,
+        seeds = [b"bonus_v6", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub bonus_state: Box<Account<'info, BonusStateV6>>,
+    #[account(
+        init,
+        payer = user,
+        space = 8 + VestingStateV6::LEN,
+        seeds = [b"vesting_v6", nft_mint.key().as_ref()],
+        bump
+    )]
+    pub vesting_state: Box<Account<'info, VestingStateV6>>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = 8 + OgTier0Claim::LEN,
+        seeds = [b"og_tier0_claim", user.key().as_ref()],
+        bump
+    )]
+    pub og_tier0_claim: Box<Account<'info, OgTier0Claim>>,
+    pub system_program: Program<'info, System>,
+    pub token_program_2022: Program<'info, Token2022>,
+    /// CHECK: Sysvar for recent blockhashes
+    #[account(address = solana_program::sysvar::recent_blockhashes::ID)]
+    pub recent_blockhashes: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
 pub struct SwapDefaiForPnftV6<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
@@ -1171,6 +1445,51 @@ pub struct UpdateNftMetadataV6<'info> {
     pub vesting_state: Account<'info, VestingStateV6>,
 }
 
+#[derive(Accounts)]
+pub struct ClaimAirdrop<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(
+        init,
+        payer = user,
+        space = 8 + AirdropVesting::LEN,
+        seeds = [b"airdrop_vesting", user.key().as_ref()],
+        bump
+    )]
+    pub airdrop_vesting: Account<'info, AirdropVesting>,
+    #[account(
+        seeds = [b"collection_config"],
+        bump
+    )]
+    pub collection_config: Account<'info, CollectionConfig>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimVestedAirdrop<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"airdrop_vesting", user.key().as_ref()],
+        bump,
+        constraint = airdrop_vesting.beneficiary == user.key()
+    )]
+    pub airdrop_vesting: Account<'info, AirdropVesting>,
+    #[account(mut)]
+    pub user_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
+    #[account(mut)]
+    pub escrow_token_account: InterfaceAccount<'info, TokenAccount2022>,
+    /// CHECK: DEFAI mint
+    pub defai_mint: AccountInfo<'info>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    pub token_program: Program<'info, Token2022>,
+}
+
 // State structs
 #[account]
 pub struct Config {
@@ -1242,10 +1561,14 @@ pub struct CollectionConfig {
     pub tier_supplies: [u16; 5],
     pub tier_minted: [u16; 5],
     pub tier_uri_prefixes: [String; 5],
+    // MAY20DEFAIHolders.csv: OG Tier 0 holders who can mint NFT + get 1:1 vesting from Quantity column
+    pub og_tier_0_merkle_root: [u8; 32],
+    // 10_1AIR-Sheet1.csv: Airdrop recipients who get vesting only (NO NFT) from AIRDROP column
+    pub airdrop_merkle_root: [u8; 32],
 }
 
 impl CollectionConfig {
-    pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + (64 * 5) + (10 * 5) + (8 * 5) + (2 * 5) + (2 * 5) + (200 * 5);
+    pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + (64 * 5) + (10 * 5) + (8 * 5) + (2 * 5) + (2 * 5) + (200 * 5) + 32 + 32;
 }
 
 #[account]
@@ -1299,6 +1622,30 @@ impl Whitelist {
     pub const LEN: usize = 32 + 4;
 }
 
+#[account]
+pub struct OgTier0Claim {
+    pub claimer: Pubkey,
+    pub claimed: bool,
+}
+
+impl OgTier0Claim {
+    pub const LEN: usize = 32 + 1;
+}
+
+#[account]
+pub struct AirdropVesting {
+    pub beneficiary: Pubkey,
+    pub total_amount: u64,
+    pub released_amount: u64,
+    pub start_timestamp: i64,
+    pub end_timestamp: i64,
+    pub last_claimed_timestamp: i64,
+}
+
+impl AirdropVesting {
+    pub const LEN: usize = 32 + 8 + 8 + 8 + 8 + 8;
+}
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("Insufficient OLD tokens provided.")]
@@ -1347,6 +1694,10 @@ pub enum ErrorCode {
     NoPendingAdminChange,
     #[msg("Timelock not expired")]
     TimelockNotExpired,
+    #[msg("User not on OG Tier 0 whitelist")]
+    NotOnOgWhitelist,
+    #[msg("OG Tier 0 NFT already claimed")]
+    OgTier0AlreadyClaimed,
 }
 
 // ===== Events =====
@@ -1402,5 +1753,21 @@ pub struct TaxReset {
     pub user: Pubkey,
     pub old_rate_bps: u16,
     pub new_rate_bps: u16,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct AirdropClaimed {
+    pub user: Pubkey,
+    pub amount: u64,
+    pub vesting_start: i64,
+    pub vesting_end: i64,
+}
+
+#[event]
+pub struct AirdropVestingClaimed {
+    pub user: Pubkey,
+    pub amount_claimed: u64,
+    pub total_vested: u64,
     pub timestamp: i64,
 }

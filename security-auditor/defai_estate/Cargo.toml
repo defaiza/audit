@@ -17,5 +17,4 @@ default = []
 
 [dependencies]
 anchor-lang = { workspace = true }
-anchor-spl = { workspace = true }
-solana-program = { workspace = true } 
+anchor-spl = { workspace = true } 
