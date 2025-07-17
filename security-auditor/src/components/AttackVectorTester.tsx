@@ -266,6 +266,7 @@ export function AttackVectorTester({ connection, wallet, adminKeypair, onTestRes
   const [activeCategory, setActiveCategory] = useState<string>('all')
   const [testEnvironment, setTestEnvironment] = useState<SecurityTestEnvironment | null>(null)
   const [safeTester, setSafeTester] = useState<SafeModeAttackTester | null>(null)
+  const { isAllInitialized, isAllDeployed } = useProgramStatus()
 
   const categories = [
     { id: 'all', name: 'All Categories', count: ATTACK_VECTORS.length },
@@ -2476,6 +2477,23 @@ export function AttackVectorTester({ connection, wallet, adminKeypair, onTestRes
         </div>
       )}
 
+      {/* Prerequisites Warning */}
+      {(!isAllDeployed || !isAllInitialized) && (
+        <div className="bg-yellow-900 bg-opacity-20 border border-yellow-700 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <span className="text-yellow-400 text-lg">⚠️</span>
+            <div>
+              <p className="text-yellow-400 font-semibold text-sm">Prerequisites Not Met</p>
+              <p className="text-yellow-300 text-xs mt-1">
+                {!wallet.connected && '• Connect your wallet first'}
+                {wallet.connected && !isAllDeployed && '• Deploy all programs before testing'}
+                {wallet.connected && isAllDeployed && !isAllInitialized && '• Initialize all programs before testing'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Run Tests Button */}
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-400">
@@ -2483,12 +2501,13 @@ export function AttackVectorTester({ connection, wallet, adminKeypair, onTestRes
         </div>
         <button
           onClick={runSelectedTests}
-          disabled={isRunning || selectedTests.length === 0 || !wallet.connected}
+          disabled={isRunning || selectedTests.length === 0 || !wallet.connected || !isAllInitialized}
           className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-            isRunning || selectedTests.length === 0 || !wallet.connected
+            isRunning || selectedTests.length === 0 || !wallet.connected || !isAllInitialized
               ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
               : 'bg-red-600 hover:bg-red-700 text-white hover:shadow-lg'
           }`}
+          title={!isAllInitialized ? 'Complete program initialization before running tests' : ''}
         >
           {isRunning ? (
             <span className="flex items-center">

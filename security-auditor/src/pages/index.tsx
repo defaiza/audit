@@ -4,6 +4,8 @@ import { Layout } from '@/components/Layout'
 import { AdvancedSecurityPanel } from '@/components/AdvancedSecurityPanel'
 import { CheckPrograms } from '@/components/CheckPrograms'
 import { DeploymentControls } from '@/components/DeploymentControls'
+import { StatusBar } from '@/components/StatusBar'
+import { WalletValidator } from '@/components/WalletValidator'
 import Link from 'next/link'
 import { DocumentTextIcon } from '@heroicons/react/24/outline'
 
@@ -31,6 +33,12 @@ export default function Home() {
             </Link>
           </div>
         </div>
+
+        {/* Status Bar */}
+        <StatusBar />
+
+        {/* Wallet Validator */}
+        <WalletValidator />
 
         {/* Network & Deployment Status */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
