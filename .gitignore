@@ -1,0 +1,5 @@
+# Test ledger files
+test-ledger/
+
+# Validator logs
+validator.log
