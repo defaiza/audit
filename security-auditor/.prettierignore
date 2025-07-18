@@ -1,0 +1,16 @@
+node_modules
+.next
+target
+build
+dist
+coverage
+*.min.js
+*.min.css
+package-lock.json
+yarn.lock
+.anchor
+test-ledger
+**/*.json
+!.prettierrc.json
+!tsconfig.json
+!package.json 

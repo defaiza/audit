@@ -8,11 +8,17 @@ defai_staking = "CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG"
 defai_estate = "J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8"
 defai_app_factory = "4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3"
 
+[programs.devnet]
+defai_swap = "877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm"
+defai_staking = "CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG"
+defai_estate = "J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8"
+defai_app_factory = "4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3"
+
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Localnet"
+cluster = "Devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

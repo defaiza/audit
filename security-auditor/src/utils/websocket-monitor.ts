@@ -1,6 +1,6 @@
 import { Connection, PublicKey, Transaction, ParsedTransactionWithMeta } from '@solana/web3.js'
 import { Program } from '@coral-xyz/anchor'
-import EventEmitter from 'events'
+import { EventEmitter } from 'events'
 
 export interface TransactionAlert {
   type: 'suspicious' | 'attack' | 'anomaly' | 'high-value'

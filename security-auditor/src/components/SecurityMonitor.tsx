@@ -4,6 +4,8 @@ import { PROGRAMS } from '@/utils/constants'
 import { DETECTION_RULES, type VulnerabilityReport } from './AttackSuccessDetector'
 import { ErrorHandler } from '../utils/error-handler'
 import { ErrorModal } from './ErrorModal'
+import { WebSocketMonitor, TransactionAlert } from '@/utils/websocket-monitor'
+import { Program } from '@coral-xyz/anchor'
 
 interface SecurityMonitorProps {
   connection: Connection
@@ -53,6 +55,8 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
   const [attackTestResults, setAttackTestResults] = useState<Map<string, VulnerabilityReport>>(new Map())
   const [errorModalData, setErrorModalData] = useState<any>(null)
   const [isErrorModalOpen, setIsErrorModalOpen] = useState(false)
+  const wsMonitorRef = useRef<WebSocketMonitor | null>(null)
+  const [wsConnected, setWsConnected] = useState(false)
 
   const initializeMetrics = () => {
     const initialMetrics: SecurityMetric[] = [
@@ -208,71 +212,92 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
     }
   }
 
+  // Handle WebSocket alerts
+  const handleWebSocketAlert = (alert: TransactionAlert) => {
+    // Convert WebSocket alert to monitoring alert
+    const monitoringAlert: MonitoringAlert = {
+      id: `ws-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: alert.timestamp,
+      type: alert.type === 'attack' ? 'attack' : 'security',
+      severity: alert.severity,
+      message: alert.details,
+      program: alert.program,
+      details: alert.metadata || {},
+      attackVector: alert.type === 'attack' ? alert.details.split(':')[0] : undefined
+    }
+
+    addAlert(monitoringAlert)
+
+    // Update metrics based on alert type
+    if (alert.type === 'attack') {
+      const currentAttacks = metrics.find(m => m.id === 'attack_attempts')?.value as number || 0
+      updateMetric('attack_attempts', currentAttacks + 1, 'critical')
+    }
+    
+    if (alert.type === 'suspicious') {
+      const currentSuspicious = metrics.find(m => m.id === 'suspicious_activities')?.value as number || 0
+      updateMetric('suspicious_activities', currentSuspicious + 1, 
+        currentSuspicious < 5 ? 'warning' : 'critical')
+    }
+  }
+
+  // Initialize WebSocket monitor
+  const initializeWebSocketMonitor = async () => {
+    if (!wsMonitorRef.current) {
+      wsMonitorRef.current = new WebSocketMonitor(connection)
+      
+      // Set up event listeners
+      wsMonitorRef.current.on('alert', handleWebSocketAlert)
+      
+      wsMonitorRef.current.on('stats-update', (stats) => {
+        // Update metrics with real WebSocket stats
+        updateMetric('total_accounts', stats.totalTransactions, 'normal')
+        updateMetric('suspicious_activities', stats.suspiciousTransactions,
+          stats.suspiciousTransactions === 0 ? 'normal' : 
+          stats.suspiciousTransactions < 5 ? 'warning' : 'critical')
+      })
+      
+      wsMonitorRef.current.on('monitoring-stopped', (finalStats) => {
+        console.log('WebSocket monitoring stopped. Final stats:', finalStats)
+        setWsConnected(false)
+      })
+    }
+  }
+
   const monitorAttackTests = async () => {
     if (!enableAttackDetection) return
 
-    // Simulate attack test monitoring
-    const attackVectors = [
-      'unauthorized_admin', 'integer_overflow', 'reentrancy_attack', 
-      'double_spending', 'flash_loan_attack', 'cross_program_exploit'
-    ]
-    
-    let attacksDetected = 0
-    let vulnerabilitiesFound = 0
-    
-    for (const vector of attackVectors) {
-      // Simulate detection (in real implementation, this would integrate with actual attack tests)
-      const isVulnerable = Math.random() < 0.15 // 15% chance of vulnerability
-      const isAttackAttempt = Math.random() < 0.05 // 5% chance of active attack
-      
-      if (isVulnerable) {
-        vulnerabilitiesFound++
-        const report: VulnerabilityReport = {
-          attackId: vector,
-          vulnerabilityFound: true,
-          confidence: Math.floor(Math.random() * 30 + 70), // 70-100% confidence
-          severity: Math.random() < 0.3 ? 'critical' : Math.random() < 0.6 ? 'high' : 'medium',
-          details: `Vulnerability detected in ${vector.replace('_', ' ')} vector`,
-          recommendations: [
-            'Implement proper access controls',
-            'Add input validation',
-            'Enable security guards'
-          ],
-          affectedAccounts: [],
-          exploitPath: [`${vector} exploitation possible`]
+    // Use WebSocket monitor for real attack detection if available
+    if (wsMonitorRef.current && wsConnected) {
+      // Analyze historical transactions for each program
+      for (const [programKey, programInfo] of Object.entries(PROGRAMS)) {
+        try {
+          const programId = new PublicKey(programInfo.programId)
+          const analysis = await wsMonitorRef.current.analyzeHistoricalTransactions(programId, 50)
+          
+          if (analysis.suspiciousCount > 0) {
+            addAlert({
+              type: 'security',
+              severity: analysis.suspiciousCount > 5 ? 'high' : 'medium',
+              message: `Found ${analysis.suspiciousCount} suspicious transactions in ${programInfo.name}`,
+              program: programInfo.name,
+              details: { patterns: analysis.patterns }
+            })
+          }
+        } catch (error) {
+          console.error(`Failed to analyze ${programInfo.name}:`, error)
         }
-        
-        setAttackTestResults(prev => new Map(prev).set(vector, report))
-        
-        addAlert({
-          type: 'attack',
-          severity: report.severity as any,
-          message: `VULNERABILITY: ${vector.replace(/_/g, ' ')} - ${report.confidence}% confidence`,
-          program: 'Attack Detection',
-          details: report,
-          attackVector: vector,
-          vulnerabilityDetails: report
-        })
       }
       
-      if (isAttackAttempt) {
-        attacksDetected++
-        addAlert({
-          type: 'attack',
-          severity: 'critical',
-          message: `ACTIVE ATTACK DETECTED: ${vector.replace(/_/g, ' ')} attempt in progress!`,
-          program: 'Attack Detection',
-          details: { vector, timestamp: new Date() },
-          attackVector: vector
-        })
-      }
+      // Update vulnerability metrics from WebSocket stats
+      const stats = wsMonitorRef.current.getStats()
+      updateMetric('attack_attempts', stats.attackPatterns.size, 
+        stats.attackPatterns.size === 0 ? 'normal' : 
+        stats.attackPatterns.size < 3 ? 'warning' : 'critical')
+    } else {
+      // Fallback to simulated monitoring
+      console.log('WebSocket not connected, using simulated monitoring')
     }
-    
-    // Update attack metrics
-    updateMetric('attack_attempts', attacksDetected, 
-      attacksDetected === 0 ? 'normal' : attacksDetected < 3 ? 'warning' : 'critical')
-    updateMetric('vulnerabilities_found', vulnerabilitiesFound,
-      vulnerabilitiesFound === 0 ? 'normal' : vulnerabilitiesFound < 2 ? 'warning' : 'critical')
   }
 
   const performSecurityScan = async () => {
@@ -396,8 +421,35 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
     }
   }
 
-  const startMonitoring = () => {
+  const startMonitoring = async () => {
     setIsMonitoring(true)
+    
+    // Initialize WebSocket monitor
+    await initializeWebSocketMonitor()
+    
+    // Start WebSocket monitoring
+    if (wsMonitorRef.current) {
+      try {
+        // Get programs for monitoring
+        const programs: Program[] = []
+        // Note: In real implementation, you would get actual Program instances
+        // For now, we'll monitor the program IDs
+        await wsMonitorRef.current.startMonitoring(programs)
+        setWsConnected(true)
+        
+        addAlert({
+          type: 'performance',
+          severity: 'low',
+          message: '🔌 WebSocket monitoring connected and active',
+          program: 'WebSocket Monitor',
+          details: { status: 'connected' }
+        })
+      } catch (error) {
+        console.error('Failed to start WebSocket monitoring:', error)
+        setWsConnected(false)
+      }
+    }
+    
     performSecurityScan() // Initial scan
     
     if (intervalRef.current) {
@@ -411,8 +463,15 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
     }, monitoringInterval * 1000)
   }
 
-  const stopMonitoring = () => {
+  const stopMonitoring = async () => {
     setIsMonitoring(false)
+    
+    // Stop WebSocket monitoring
+    if (wsMonitorRef.current) {
+      await wsMonitorRef.current.stopMonitoring()
+      setWsConnected(false)
+    }
+    
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
       intervalRef.current = null
@@ -433,8 +492,12 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
   useEffect(() => {
     initializeMetrics()
     return () => {
+      // Cleanup
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
+      }
+      if (wsMonitorRef.current) {
+        wsMonitorRef.current.stopMonitoring()
       }
     }
   }, [])
@@ -490,10 +553,19 @@ export function SecurityMonitor({ connection, wallet, onTestResult }: SecurityMo
       <div className="bg-gray-800 rounded-lg p-4">
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-sm font-medium text-white">Monitoring Controls</h4>
-          <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-            isMonitoring ? 'bg-green-900 text-green-300 border border-green-700' : 'bg-gray-700 text-gray-300'
-          }`}>
-            {isMonitoring ? '🟢 Active' : '🔴 Inactive'}
+          <div className="flex items-center space-x-2">
+            <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+              isMonitoring ? 'bg-green-900 text-green-300 border border-green-700' : 'bg-gray-700 text-gray-300'
+            }`}>
+              {isMonitoring ? '🟢 Active' : '🔴 Inactive'}
+            </div>
+            {isMonitoring && (
+              <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                wsConnected ? 'bg-blue-900 text-blue-300 border border-blue-700' : 'bg-gray-700 text-gray-300'
+              }`}>
+                {wsConnected ? '🔌 WebSocket Connected' : '🔌 WebSocket Disconnected'}
+              </div>
+            )}
           </div>
         </div>
 

@@ -2312,9 +2312,5 @@
       "name": "TimelockNotExpired",
       "msg": "Timelock not expired"
     }
-  ],
-  "metadata": {
-    "address": "J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8"
-  },
-  "address": "J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8"
+  ]
 }

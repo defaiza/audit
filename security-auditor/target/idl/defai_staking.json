@@ -779,9 +779,5 @@
       "name": "InvalidMint",
       "msg": "Invalid mint address"
     }
-  ],
-  "metadata": {
-    "address": "CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG"
-  },
-  "address": "CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG"
+  ]
 }

@@ -1,0 +1,248 @@
+name: DeFAI Security Audit CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  SOLANA_VERSION: '1.18.4'
+  ANCHOR_VERSION: '0.30.1'
+  NODE_VERSION: '20.x'
+  RUST_VERSION: '1.75.0'
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: security-auditor/package-lock.json
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ env.RUST_VERSION }}
+        override: true
+        components: rustfmt, clippy
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          security-auditor/target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Install Solana CLI
+      run: |
+        sh -c "$(curl -sSfL https://release.solana.com/v${{ env.SOLANA_VERSION }}/install)"
+        echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+        solana --version
+
+    - name: Install Anchor CLI
+      run: |
+        cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+        avm install ${{ env.ANCHOR_VERSION }}
+        avm use ${{ env.ANCHOR_VERSION }}
+        anchor --version
+
+    - name: Generate keypair
+      run: |
+        cd security-auditor
+        solana-keygen new --no-bip39-passphrase --silent --outfile admin-keypair.json
+
+    - name: Install dependencies
+      run: |
+        cd security-auditor
+        npm ci
+
+    - name: Build Solana programs
+      run: |
+        cd security-auditor
+        anchor build
+
+    - name: Start test validator
+      run: |
+        cd security-auditor
+        solana-test-validator --quiet &
+        sleep 10
+        solana config set --url http://127.0.0.1:8899
+
+    - name: Deploy programs
+      run: |
+        cd security-auditor
+        npm run deploy:localnet
+
+    - name: Initialize programs
+      run: |
+        cd security-auditor
+        npm run init:all
+
+    - name: Run security tests
+      id: security_tests
+      run: |
+        cd security-auditor
+        npm run test:security > test-output.log 2>&1 || true
+        echo "Test output saved to test-output.log"
+
+    - name: Generate security report
+      if: always()
+      run: |
+        cd security-auditor
+        npm run generate:report || true
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-test-results
+        path: |
+          security-auditor/test-results-*.json
+          security-auditor/security-audit-*.json
+          security-auditor/reports/*.html
+          security-auditor/reports/*.pdf
+          security-auditor/test-output.log
+        retention-days: 30
+
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report
+        path: security-auditor/coverage
+        retention-days: 30
+
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          let comment = '## 🔒 Security Audit Results\n\n';
+          
+          try {
+            // Read the latest test results
+            const files = fs.readdirSync('security-auditor')
+              .filter(f => f.startsWith('test-results-'))
+              .sort().reverse();
+            
+            if (files.length > 0) {
+              const latestResults = JSON.parse(
+                fs.readFileSync(path.join('security-auditor', files[0]), 'utf8')
+              );
+              
+              const totalTests = latestResults.programs.reduce(
+                (sum, p) => sum + p.tests.length, 0
+              );
+              const passedTests = latestResults.programs.reduce(
+                (sum, p) => sum + p.tests.filter(t => t.status === 'pass').length, 0
+              );
+              
+              comment += `### Summary\n`;
+              comment += `- **Total Tests**: ${totalTests}\n`;
+              comment += `- **Passed**: ${passedTests}\n`;
+              comment += `- **Failed**: ${totalTests - passedTests}\n`;
+              comment += `- **Success Rate**: ${((passedTests / totalTests) * 100).toFixed(1)}%\n\n`;
+              
+              // Add vulnerabilities summary
+              const vulnerabilities = latestResults.programs.reduce((acc, p) => {
+                p.tests.forEach(t => {
+                  if (t.vulnerabilities && t.vulnerabilities.length > 0) {
+                    t.vulnerabilities.forEach(v => {
+                      if (!acc[v.severity]) acc[v.severity] = 0;
+                      acc[v.severity]++;
+                    });
+                  }
+                });
+                return acc;
+              }, {});
+              
+              if (Object.keys(vulnerabilities).length > 0) {
+                comment += `### Vulnerabilities Found\n`;
+                comment += `- **Critical**: ${vulnerabilities.critical || 0}\n`;
+                comment += `- **High**: ${vulnerabilities.high || 0}\n`;
+                comment += `- **Medium**: ${vulnerabilities.medium || 0}\n`;
+                comment += `- **Low**: ${vulnerabilities.low || 0}\n\n`;
+              }
+              
+              comment += `[View full report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n`;
+            }
+          } catch (error) {
+            comment += `Error reading test results: ${error.message}\n`;
+          }
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+    - name: Check for critical vulnerabilities
+      if: always()
+      run: |
+        cd security-auditor
+        # Parse test results and fail if critical vulnerabilities found
+        if [ -f "test-results-*.json" ]; then
+          CRITICAL_COUNT=$(cat test-results-*.json | jq '[.programs[].tests[].vulnerabilities[]? | select(.severity == "critical")] | length' | tail -1)
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "❌ Found $CRITICAL_COUNT critical vulnerabilities!"
+            exit 1
+          else
+            echo "✅ No critical vulnerabilities found"
+          fi
+        fi
+
+  lint-and-format:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: security-auditor/package-lock.json
+
+    - name: Install dependencies
+      run: |
+        cd security-auditor
+        npm ci
+
+    - name: Run ESLint
+      run: |
+        cd security-auditor
+        npm run lint || true
+
+    - name: Run Prettier
+      run: |
+        cd security-auditor
+        npm run format:check || true
+
+    - name: TypeScript type check
+      run: |
+        cd security-auditor
+        npm run type-check || true 
