@@ -299,7 +299,7 @@
       "args": []
     },
     {
-      "name": "proposeAuthorityChange",
+      "name": "updateAuthority",
       "accounts": [
         {
           "name": "programState",
@@ -315,48 +315,6 @@
       "args": [
         {
           "name": "newAuthority",
-          "type": "publicKey"
-        }
-      ]
-    },
-    {
-      "name": "acceptAuthorityChange",
-      "accounts": [
-        {
-          "name": "programState",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "authority",
-          "isMut": false,
-          "isSigner": true
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "updateDefaiMint",
-      "accounts": [
-        {
-          "name": "programState",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "authority",
-          "isMut": false,
-          "isSigner": true
-        },
-        {
-          "name": "newDefaiMint",
-          "isMut": true,
-          "isSigner": false
-        }
-      ],
-      "args": [
-        {
-          "name": "newMint",
           "type": "publicKey"
         }
       ]
@@ -381,37 +339,6 @@
           "type": "bool"
         }
       ]
-    },
-    {
-      "name": "compoundRewards",
-      "accounts": [
-        {
-          "name": "programState",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "userStake",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "rewardEscrow",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "user",
-          "isMut": false,
-          "isSigner": true
-        },
-        {
-          "name": "owner",
-          "isMut": false,
-          "isSigner": false
-        }
-      ],
-      "args": []
     }
   ],
   "accounts": [
@@ -447,16 +374,6 @@
           {
             "name": "escrowBump",
             "type": "u8"
-          },
-          {
-            "name": "pendingAuthority",
-            "type": {
-              "option": "publicKey"
-            }
-          },
-          {
-            "name": "authorityChangeTimestamp",
-            "type": "i64"
           }
         ]
       }
@@ -621,106 +538,6 @@
           "index": false
         }
       ]
-    },
-    {
-      "name": "AuthorityUpdatedEvent",
-      "fields": [
-        {
-          "name": "oldAuthority",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "newAuthority",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "timestamp",
-          "type": "i64",
-          "index": false
-        }
-      ]
-    },
-    {
-      "name": "ProgramPausedEvent",
-      "fields": [
-        {
-          "name": "authority",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "paused",
-          "type": "bool",
-          "index": false
-        },
-        {
-          "name": "timestamp",
-          "type": "i64",
-          "index": false
-        }
-      ]
-    },
-    {
-      "name": "RewardsCompoundedEvent",
-      "fields": [
-        {
-          "name": "user",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "amountCompounded",
-          "type": "u64",
-          "index": false
-        },
-        {
-          "name": "newStakeAmount",
-          "type": "u64",
-          "index": false
-        },
-        {
-          "name": "oldTier",
-          "type": "u8",
-          "index": false
-        },
-        {
-          "name": "newTier",
-          "type": "u8",
-          "index": false
-        },
-        {
-          "name": "timestamp",
-          "type": "i64",
-          "index": false
-        }
-      ]
-    },
-    {
-      "name": "DefaiMintUpdatedEvent",
-      "fields": [
-        {
-          "name": "oldMint",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "newMint",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "authority",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "timestamp",
-          "type": "i64",
-          "index": false
-        }
-      ]
     }
   ],
   "errors": [
@@ -763,25 +580,6 @@
       "code": 6007,
       "name": "InsufficientEscrowBalance",
       "msg": "Insufficient escrow balance"
-    },
-    {
-      "code": 6008,
-      "name": "NoPendingAuthorityChange",
-      "msg": "No pending authority change"
-    },
-    {
-      "code": 6009,
-      "name": "TimelockNotExpired",
-      "msg": "Timelock not expired"
-    },
-    {
-      "code": 6010,
-      "name": "InvalidMint",
-      "msg": "Invalid mint address"
     }
-  ],
-  "metadata": {
-  "address": "DtTDbmQgghWJYp3F4vhaaJGyGoF86qRZh9t2kMtmPBbg"
-},
-  "address": "DtTDbmQgghWJYp3F4vhaaJGyGoF86qRZh9t2kMtmPBbg"
+  ]
 }

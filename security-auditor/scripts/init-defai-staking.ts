@@ -20,7 +20,7 @@ export async function initializeDefaiStaking() {
     require("fs").readFileSync("target/idl/defai_staking.json", "utf8")
   );
   
-  const programId = new PublicKey("CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG"); // Update with your program ID
+  const programId = new PublicKey("DtTDbmQgghWJYp3F4vhaaJGyGoF86qRZh9t2kMtmPBbg"); // Update with your program ID
   const program = new anchor.Program(idl, programId, provider);
   const wallet = provider.wallet;
   

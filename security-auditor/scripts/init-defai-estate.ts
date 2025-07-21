@@ -39,7 +39,7 @@ export async function initializeDefaiEstate() {
     require("fs").readFileSync("target/idl/defai_estate.json", "utf8")
   );
   
-  const programId = new PublicKey("J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8"); // Update with your program ID
+  const programId = new PublicKey("DYXXvied9wwpDaE1NcVS56BfeQ4ZxXozft7FCLNVUG41"); // Update with your program ID
   const program = new anchor.Program(idl, programId, provider);
   const wallet = provider.wallet;
   

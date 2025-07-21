@@ -3,16 +3,16 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-defai_swap = "877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm"
-defai_staking = "CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG"
-defai_estate = "J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8"
-defai_app_factory = "4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3"
+defai_swap = "5ag9ncKTGrhDxdfvRxmSenP848kkgP6BMdaTFLfa2siT"
+defai_staking = "DtTDbmQgghWJYp3F4vhaaJGyGoF86qRZh9t2kMtmPBbg"
+defai_estate = "DYXXvied9wwpDaE1NcVS56BfeQ4ZxXozft7FCLNVUG41"
+defai_app_factory = "7NF6yiQeRbNpYZJzgdijQErD1WYh9mUxwN5SBDpSA6dX"
 
 [programs.devnet]
-defai_swap = "877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm"
-defai_staking = "CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG"
-defai_estate = "J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8"
-defai_app_factory = "4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3"
+defai_swap = "5ag9ncKTGrhDxdfvRxmSenP848kkgP6BMdaTFLfa2siT"
+defai_staking = "DtTDbmQgghWJYp3F4vhaaJGyGoF86qRZh9t2kMtmPBbg"
+defai_estate = "DYXXvied9wwpDaE1NcVS56BfeQ4ZxXozft7FCLNVUG41"
+defai_app_factory = "7NF6yiQeRbNpYZJzgdijQErD1WYh9mUxwN5SBDpSA6dX"
 
 [registry]
 url = "https://api.apr.dev"

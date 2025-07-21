@@ -285,10 +285,10 @@ export class ProgramTester {
         test: async () => {
           // Check if we have a local IDL for this program
           const idlMap: { [key: string]: any } = {
-            '877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm': defaiSwapIdl,
-            'CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG': defaiStakingIdl,
-            'J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8': defaiEstateIdl,
-            '4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3': defaiAppFactoryIdl
+            '5ag9ncKTGrhDxdfvRxmSenP848kkgP6BMdaTFLfa2siT': defaiSwapIdl,
+            'DtTDbmQgghWJYp3F4vhaaJGyGoF86qRZh9t2kMtmPBbg': defaiStakingIdl,
+            'DYXXvied9wwpDaE1NcVS56BfeQ4ZxXozft7FCLNVUG41': defaiEstateIdl,
+            '7NF6yiQeRbNpYZJzgdijQErD1WYh9mUxwN5SBDpSA6dX': defaiAppFactoryIdl
           }
           return idlMap[programId] !== undefined
         }

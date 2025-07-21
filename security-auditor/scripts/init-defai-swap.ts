@@ -36,7 +36,7 @@ export async function initializeDefaiSwap() {
     require("fs").readFileSync("target/idl/defai_swap.json", "utf8")
   );
   
-  const programId = new PublicKey("877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm"); // Update with your program ID
+  const programId = new PublicKey("5ag9ncKTGrhDxdfvRxmSenP848kkgP6BMdaTFLfa2siT"); // Update with your program ID
   const program = new anchor.Program(idl, programId, provider);
   const wallet = provider.wallet;
   

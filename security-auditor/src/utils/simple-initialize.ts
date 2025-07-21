@@ -114,7 +114,7 @@ export class SimpleInitializer {
 
   async initializeSwap(defaiMint: PublicKey, rewardsMint: PublicKey): Promise<InitializationResult> {
     try {
-      const programId = new PublicKey('877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm')
+      const programId = new PublicKey('5ag9ncKTGrhDxdfvRxmSenP848kkgP6BMdaTFLfa2siT')
       
       // Check if program is deployed
       const isDeployed = await this.checkProgramDeployment(programId, 'DeFAI Swap')
@@ -218,7 +218,7 @@ export class SimpleInitializer {
 
   async initializeStaking(defaiMint: PublicKey): Promise<InitializationResult> {
     try {
-      const programId = new PublicKey('CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG')
+      const programId = new PublicKey('DtTDbmQgghWJYp3F4vhaaJGyGoF86qRZh9t2kMtmPBbg')
       
       // Check if program is deployed
       const isDeployed = await this.checkProgramDeployment(programId, 'DeFAI Staking')
@@ -303,7 +303,7 @@ export class SimpleInitializer {
 
   async initializeEstate(): Promise<InitializationResult> {
     try {
-      const programId = new PublicKey('J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8')
+      const programId = new PublicKey('DYXXvied9wwpDaE1NcVS56BfeQ4ZxXozft7FCLNVUG41')
       
       // Check if program is deployed
       const isDeployed = await this.checkProgramDeployment(programId, 'DeFAI Estate')
@@ -380,7 +380,7 @@ export class SimpleInitializer {
 
   async initializeAppFactory(defaiMint: PublicKey): Promise<InitializationResult> {
     try {
-      const programId = new PublicKey('4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3')
+      const programId = new PublicKey('7NF6yiQeRbNpYZJzgdijQErD1WYh9mUxwN5SBDpSA6dX')
       
       // Check if program is deployed
       const isDeployed = await this.checkProgramDeployment(programId, 'DeFAI App Factory')

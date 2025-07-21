@@ -62,10 +62,10 @@ export class SecurityTestEnvironment {
 
     // Program IDs from deployed programs
     const programIds = {
-      swap: new PublicKey('877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm'),
-      staking: new PublicKey('CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG'),
-      estate: new PublicKey('J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8'),
-      appFactory: new PublicKey('4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3')
+      swap: new PublicKey('5ag9ncKTGrhDxdfvRxmSenP848kkgP6BMdaTFLfa2siT'),
+      staking: new PublicKey('DtTDbmQgghWJYp3F4vhaaJGyGoF86qRZh9t2kMtmPBbg'),
+      estate: new PublicKey('DYXXvied9wwpDaE1NcVS56BfeQ4ZxXozft7FCLNVUG41'),
+      appFactory: new PublicKey('7NF6yiQeRbNpYZJzgdijQErD1WYh9mUxwN5SBDpSA6dX')
     }
 
     this.environment = {

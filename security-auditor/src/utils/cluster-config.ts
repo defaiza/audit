@@ -169,10 +169,10 @@ export class ClusterManager {
     // In production, you would have different program IDs per cluster
     // For now, return the same IDs for all clusters
     const baseIds = {
-      SWAP: process.env.NEXT_PUBLIC_SWAP_PROGRAM_ID || '877w653ayrjqM6fT5yjCuPuTABo8h7N6ffF3es1HRrxm',
-      STAKING: process.env.NEXT_PUBLIC_STAKING_PROGRAM_ID || 'CvDs2FSKiNAmtdGmY3LaVcCpqAudK3otmrG3ksmUBzpG',
-      ESTATE: process.env.NEXT_PUBLIC_ESTATE_PROGRAM_ID || 'J8qubfQ5SdvYiJLo5V2mMspZp9as75RePwstVXrtJxo8',
-      APP_FACTORY: process.env.NEXT_PUBLIC_APP_FACTORY_PROGRAM_ID || '4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3'
+      SWAP: process.env.NEXT_PUBLIC_SWAP_PROGRAM_ID || '5ag9ncKTGrhDxdfvRxmSenP848kkgP6BMdaTFLfa2siT',
+      STAKING: process.env.NEXT_PUBLIC_STAKING_PROGRAM_ID || 'DtTDbmQgghWJYp3F4vhaaJGyGoF86qRZh9t2kMtmPBbg',
+      ESTATE: process.env.NEXT_PUBLIC_ESTATE_PROGRAM_ID || 'DYXXvied9wwpDaE1NcVS56BfeQ4ZxXozft7FCLNVUG41',
+      APP_FACTORY: process.env.NEXT_PUBLIC_APP_FACTORY_PROGRAM_ID || '7NF6yiQeRbNpYZJzgdijQErD1WYh9mUxwN5SBDpSA6dX'
     };
 
     // Override with cluster-specific IDs if available

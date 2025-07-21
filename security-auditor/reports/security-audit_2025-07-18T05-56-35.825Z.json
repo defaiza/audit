@@ -1,0 +1,114 @@
+{
+  "timestamp": "2025-07-18T05:56:35.797Z",
+  "totalTests": 14,
+  "passed": 6,
+  "failed": 8,
+  "securityScore": 43,
+  "categoryBreakdown": {},
+  "programBreakdown": {},
+  "results": [
+    {
+      "test": "Program Deployment",
+      "program": "defaiSwap",
+      "status": "failed",
+      "message": "Program not found",
+      "details": {
+        "deployed": false
+      }
+    },
+    {
+      "test": "Program Deployment",
+      "program": "defaiStaking",
+      "status": "failed",
+      "message": "Program not found",
+      "details": {
+        "deployed": false
+      }
+    },
+    {
+      "test": "Program Deployment",
+      "program": "defaiEstate",
+      "status": "failed",
+      "message": "Program not found",
+      "details": {
+        "deployed": false
+      }
+    },
+    {
+      "test": "Program Deployment",
+      "program": "defaiAppFactory",
+      "status": "failed",
+      "message": "Program not found",
+      "details": {
+        "deployed": false
+      }
+    },
+    {
+      "test": "Initialize Program State",
+      "program": "SWAP",
+      "status": "error",
+      "message": "Program instance not found"
+    },
+    {
+      "test": "Initialize Program State",
+      "program": "STAKING",
+      "status": "error",
+      "message": "Program instance not found"
+    },
+    {
+      "test": "Initialize Program State",
+      "program": "ESTATE",
+      "status": "error",
+      "message": "Program instance not found"
+    },
+    {
+      "test": "Initialize Program State",
+      "program": "APP_FACTORY",
+      "status": "error",
+      "message": "Program instance not found"
+    },
+    {
+      "test": "Zero Amount Transaction",
+      "program": "ALL",
+      "status": "success",
+      "message": "Input validation working - blocked"
+    },
+    {
+      "test": "Negative Amount (via underflow)",
+      "program": "ALL",
+      "status": "success",
+      "message": "Input validation working - blocked"
+    },
+    {
+      "test": "Invalid Account Address",
+      "program": "ALL",
+      "status": "success",
+      "message": "Input validation working - blocked"
+    },
+    {
+      "test": "Integer Overflow Protection",
+      "program": "SWAP",
+      "status": "success",
+      "message": "Overflow protection working - calculations use checked math"
+    },
+    {
+      "test": "Integer Overflow Protection",
+      "program": "STAKING",
+      "status": "success",
+      "message": "Overflow protection working - calculations use checked math"
+    },
+    {
+      "test": "Integer Overflow Protection",
+      "program": "APP_FACTORY",
+      "status": "success",
+      "message": "Overflow protection working - calculations use checked math"
+    }
+  ],
+  "recommendations": [
+    "Deploy all programs before running tests",
+    "Address failing tests to improve security score",
+    "Implement comprehensive attack vector testing",
+    "Add real-time monitoring for production deployment",
+    "Consider formal verification for critical functions"
+  ]
+}

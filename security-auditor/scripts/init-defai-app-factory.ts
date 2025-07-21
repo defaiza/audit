@@ -28,7 +28,7 @@ export async function initializeDefaiAppFactory() {
     require("fs").readFileSync("target/idl/defai_app_factory.json", "utf8")
   );
   
-  const programId = new PublicKey("4HsYtGADv25mPs1CqicceHK1BuaLhBD66ZFjZ8jnJZr3"); // Update with your program ID
+  const programId = new PublicKey("7NF6yiQeRbNpYZJzgdijQErD1WYh9mUxwN5SBDpSA6dX"); // Update with your program ID
   const program = new anchor.Program(idl, programId, provider);
   const wallet = provider.wallet;
   
