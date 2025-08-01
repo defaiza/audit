@@ -98,6 +98,11 @@
       "name": "fundEscrow",
       "accounts": [
         {
+          "name": "programState",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "rewardEscrow",
           "isMut": true,
           "isSigner": false
@@ -336,32 +341,6 @@
       "args": []
     },
     {
-      "name": "updateDefaiMint",
-      "accounts": [
-        {
-          "name": "programState",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "authority",
-          "isMut": false,
-          "isSigner": true
-        },
-        {
-          "name": "newDefaiMint",
-          "isMut": true,
-          "isSigner": false
-        }
-      ],
-      "args": [
-        {
-          "name": "newMint",
-          "type": "publicKey"
-        }
-      ]
-    },
-    {
       "name": "pauseProgram",
       "accounts": [
         {
@@ -512,6 +491,10 @@
           },
           {
             "name": "stakeTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "lastStakeTimestamp",
             "type": "i64"
           },
           {
@@ -688,31 +671,6 @@
         {
           "name": "newTier",
           "type": "u8",
-          "index": false
-        },
-        {
-          "name": "timestamp",
-          "type": "i64",
-          "index": false
-        }
-      ]
-    },
-    {
-      "name": "DefaiMintUpdatedEvent",
-      "fields": [
-        {
-          "name": "oldMint",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "newMint",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "authority",
-          "type": "publicKey",
           "index": false
         },
         {

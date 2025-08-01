@@ -135,6 +135,8 @@ pub mod defai_swap {
     }
 
     pub fn initialize_whitelist(ctx: Context<InitializeWhitelist>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        
         let whitelist = &mut ctx.accounts.whitelist;
         whitelist.root = WHITELIST_ROOT;
         whitelist.claimed_count = 0;
@@ -195,6 +197,7 @@ pub mod defai_swap {
     
     pub fn enable_vrf(ctx: Context<UpdateConfig>) -> Result<()> {
         require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        require!(!ctx.accounts.config.vrf_enabled, ErrorCode::VrfAlreadyEnabled);
         
         let cfg = &mut ctx.accounts.config;
         cfg.vrf_enabled = true;
@@ -323,9 +326,9 @@ pub mod defai_swap {
         
         require!(is_valid, ErrorCode::NotOnOgWhitelist);
         
-        // Check tier 0 supply
+        // Check OG tier 0 supply (separate from regular tier 0)
         require!(
-            config.tier_minted[0] < config.tier_supplies[0],
+            config.og_tier_0_minted < config.og_tier_0_supply,
             ErrorCode::NoLiquidity
         );
         
@@ -366,9 +369,9 @@ pub mod defai_swap {
         og_claim.claimer = ctx.accounts.user.key();
         og_claim.claimed = true;
         
-        // Update tier minted count
+        // Update OG tier 0 minted count (separate from regular tier 0)
         let config = &mut ctx.accounts.collection_config;
-        config.tier_minted[0] += 1;
+        config.og_tier_0_minted += 1;
         
         // Emit swap event
         emit!(SwapExecuted {
@@ -399,14 +402,22 @@ pub mod defai_swap {
         let user_tax = &mut ctx.accounts.user_tax_state;
         let clock = Clock::get()?;
         
-        // Check supply
-        require!(
-            config.tier_minted[tier as usize] < config.tier_supplies[tier as usize],
-            ErrorCode::NoLiquidity
-        );
+        // Check supply - for tier 0, check remaining supply after reserving for OG holders
+        if tier == 0 {
+            let remaining_supply = config.tier_supplies[0].saturating_sub(config.og_tier_0_supply);
+            require!(
+                config.tier_minted[0] < remaining_supply,
+                ErrorCode::NoLiquidity
+            );
+        } else {
+            require!(
+                config.tier_minted[tier as usize] < config.tier_supplies[tier as usize],
+                ErrorCode::NoLiquidity
+            );
+        }
         
         // Check and reset tax if 24 hours passed
-        if clock.unix_timestamp - user_tax.last_swap_timestamp > TAX_RESET_DURATION {
+        if clock.unix_timestamp - user_tax.last_swap_timestamp >= TAX_RESET_DURATION {
             user_tax.tax_rate_bps = INITIAL_TAX_BPS;
             user_tax.swap_count = 0;
         }
@@ -576,9 +587,10 @@ pub mod defai_swap {
         vesting_state.end_timestamp = clock.unix_timestamp + VESTING_DURATION;
         vesting_state.last_claimed_timestamp = clock.unix_timestamp;
         
-        // Update user tax state
+        // OLD DEFAI swaps are tax-free and should not affect tax state
+        // Only increment swap count for tracking purposes
         user_tax.swap_count += 1;
-        user_tax.last_swap_timestamp = clock.unix_timestamp;
+        // Do NOT update last_swap_timestamp to avoid breaking the tax reset mechanism
         
         config.tier_minted[tier as usize] += 1;
         
@@ -773,12 +785,7 @@ pub mod defai_swap {
     pub fn claim_vested_v6(ctx: Context<ClaimVestedV6>) -> Result<()> {
         msg!("=== CLAIM VESTED V6 START ===");
         
-        // Verify user owns the NFT
-        require!(
-            ctx.accounts.user_nft_ata.owner == ctx.accounts.user.key() &&
-            ctx.accounts.user_nft_ata.amount == 1,
-            ErrorCode::NoNft
-        );
+        // NFT ownership and mint validation is now done in the account constraints
         
         let vesting_state = &mut ctx.accounts.vesting_state;
         let clock = Clock::get()?;
@@ -864,15 +871,40 @@ pub mod defai_swap {
         Ok(())
     }
 
+    pub fn admin_withdraw_token2022(ctx: Context<AdminWithdrawToken2022>, amount: u64) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        
+        let escrow_seeds = &[b"escrow" as &[u8], &[ctx.accounts.escrow.bump][..]];
+        let signer_seeds = &[&escrow_seeds[..]];
+        
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program_2022.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.source_vault.to_account_info(),
+                to: ctx.accounts.dest.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
+            },
+            signer_seeds,
+        );
+        
+        // Transfer with 6 decimals (standard for DEFAI tokens)
+        token22::transfer_checked(cpi_ctx, amount, 6)?;
+        
+        // Emit admin action event
+        emit!(AdminAction {
+            admin: ctx.accounts.admin.key(),
+            action: format!("Withdraw {} Token-2022 tokens", amount),
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+        
+        Ok(())
+    }
+
     pub fn reroll_bonus_v6(ctx: Context<RerollBonusV6>) -> Result<()> {
         msg!("=== REROLL BONUS V6 START ===");
         
-        // Verify user owns the NFT
-        require!(
-            ctx.accounts.user_nft_ata.owner == ctx.accounts.user.key() &&
-            ctx.accounts.user_nft_ata.amount == 1,
-            ErrorCode::NoNft
-        );
+        // NFT ownership and mint validation is now done in the account constraints
         
         let bonus_state = &mut ctx.accounts.bonus_state;
         let vesting_state = &mut ctx.accounts.vesting_state;
@@ -1101,6 +1133,11 @@ pub struct InitializeWhitelist<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
     #[account(
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, Config>,
+    #[account(
         init,
         payer = admin,
         space = 8 + Whitelist::LEN,
@@ -1214,9 +1251,19 @@ pub struct SwapDefaiForPnftV6<'info> {
     pub user: Signer<'info>,
     #[account(mut)]
     pub user_defai_ata: Box<InterfaceAccount<'info, TokenAccount2022>>,
-    #[account(mut)]
+    #[account(
+        mut,
+        // Validate treasury ATA matches the configured treasury
+        token::mint = defai_mint,
+        token::authority = collection_config.treasury
+    )]
     pub treasury_defai_ata: Box<InterfaceAccount<'info, TokenAccount2022>>,
-    #[account(mut)]
+    #[account(
+        mut,
+        // Validate escrow ATA is owned by the escrow PDA
+        token::mint = defai_mint,
+        token::authority = escrow
+    )]
     pub escrow_defai_ata: Box<InterfaceAccount<'info, TokenAccount2022>>,
     /// CHECK: DEFAI mint
     pub defai_mint: AccountInfo<'info>,
@@ -1352,7 +1399,11 @@ pub struct ClaimVestedV6<'info> {
     pub user: Signer<'info>,
     /// CHECK: NFT mint
     pub nft_mint: AccountInfo<'info>,
-    #[account()]
+    #[account(
+        constraint = user_nft_ata.mint == nft_mint.key() @ ErrorCode::InvalidNft,
+        constraint = user_nft_ata.owner == user.key() @ ErrorCode::NoNft,
+        constraint = user_nft_ata.amount == 1 @ ErrorCode::NoNft
+    )]
     pub user_nft_ata: InterfaceAccount<'info, TokenAccount2022>,
     #[account(mut)]
     pub user_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
@@ -1393,12 +1444,35 @@ pub struct AdminWithdraw<'info> {
 }
 
 #[derive(Accounts)]
+pub struct AdminWithdrawToken2022<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(mut)]
+    pub source_vault: InterfaceAccount<'info, TokenAccount2022>,
+    #[account(mut)]
+    pub dest: InterfaceAccount<'info, TokenAccount2022>,
+    /// CHECK: Mint account for validation
+    pub mint: AccountInfo<'info>,
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    pub token_program_2022: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
 pub struct RerollBonusV6<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
     /// CHECK: NFT mint
     pub nft_mint: AccountInfo<'info>,
-    #[account()]
+    #[account(
+        constraint = user_nft_ata.mint == nft_mint.key() @ ErrorCode::InvalidNft,
+        constraint = user_nft_ata.owner == user.key() @ ErrorCode::NoNft,
+        constraint = user_nft_ata.amount == 1 @ ErrorCode::NoNft
+    )]
     pub user_nft_ata: InterfaceAccount<'info, TokenAccount2022>,
     #[account()]
     pub user_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
@@ -1565,10 +1639,12 @@ pub struct CollectionConfig {
     pub og_tier_0_merkle_root: [u8; 32],
     // 10_1AIR-Sheet1.csv: Airdrop recipients who get vesting only (NO NFT) from AIRDROP column
     pub airdrop_merkle_root: [u8; 32],
+    pub og_tier_0_supply: u16,      // Reserved supply for OG holders
+    pub og_tier_0_minted: u16,      // Counter for OG claims
 }
 
 impl CollectionConfig {
-    pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + (64 * 5) + (10 * 5) + (8 * 5) + (2 * 5) + (2 * 5) + (200 * 5) + 32 + 32;
+    pub const LEN: usize = 32 + 32 + 32 + 32 + 32 + (64 * 5) + (10 * 5) + (8 * 5) + (2 * 5) + (2 * 5) + (200 * 5) + 32 + 32 + 2 + 2;  // Added 4 bytes for og_tier_0_supply and og_tier_0_minted
 }
 
 #[account]
@@ -1698,6 +1774,10 @@ pub enum ErrorCode {
     NotOnOgWhitelist,
     #[msg("OG Tier 0 NFT already claimed")]
     OgTier0AlreadyClaimed,
+    #[msg("Invalid NFT - NFT mint does not match")]
+    InvalidNft,
+    #[msg("VRF is already enabled")]
+    VrfAlreadyEnabled,
 }
 
 // ===== Events =====

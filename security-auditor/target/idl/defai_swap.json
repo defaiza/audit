@@ -145,6 +145,11 @@
           "isSigner": true
         },
         {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "whitelist",
           "isMut": true,
           "isSigner": false
@@ -1000,6 +1005,52 @@
       ]
     },
     {
+      "name": "adminWithdrawToken2022",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "sourceVault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "dest",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "mint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "escrow",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram2022",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "rerollBonusV6",
       "accounts": [
         {
@@ -1325,6 +1376,14 @@
                 32
               ]
             }
+          },
+          {
+            "name": "ogTier0Supply",
+            "type": "u16"
+          },
+          {
+            "name": "ogTier0Minted",
+            "type": "u16"
           }
         ]
       }
@@ -1602,6 +1661,12 @@
           },
           {
             "name": "OgTier0AlreadyClaimed"
+          },
+          {
+            "name": "InvalidNft"
+          },
+          {
+            "name": "VrfAlreadyEnabled"
           }
         ]
       }

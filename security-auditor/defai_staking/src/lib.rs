@@ -21,6 +21,10 @@ pub const BASIS_POINTS: u64 = 10_000;
 // Timelock duration for admin actions
 pub const ADMIN_TIMELOCK_DURATION: i64 = 48 * 60 * 60; // 48 hours
 
+// TODO: Replace with actual program initializer authority pubkey for production
+// Example: pub const PROGRAM_INITIALIZER: Pubkey = pubkey!("ActualInitializerPubkeyHere");
+// For now, we'll add logging to track who initializes the program
+
 #[program]
 pub mod defai_staking {
     use super::*;
@@ -29,6 +33,16 @@ pub mod defai_staking {
         ctx: Context<InitializeProgram>,
         defai_mint: Pubkey,
     ) -> Result<()> {
+        // TODO: For production, uncomment and implement authority check:
+        // require_keys_eq!(
+        //     ctx.accounts.authority.key(),
+        //     PROGRAM_INITIALIZER,
+        //     StakingError::InvalidAuthority
+        // );
+        
+        // Log the initializer for audit trail
+        msg!("Program initialized by authority: {}", ctx.accounts.authority.key());
+        
         let program_state = &mut ctx.accounts.program_state;
         
         program_state.authority = ctx.accounts.authority.key();
@@ -47,6 +61,16 @@ pub mod defai_staking {
     pub fn initialize_escrow(
         ctx: Context<InitializeEscrow>,
     ) -> Result<()> {
+        // Verify the caller is the program authority
+        require_keys_eq!(
+            ctx.accounts.authority.key(),
+            ctx.accounts.program_state.authority,
+            StakingError::InvalidAuthority
+        );
+        
+        // Log the escrow initialization
+        msg!("Escrow initialized by authority: {}", ctx.accounts.authority.key());
+        
         let program_state = &mut ctx.accounts.program_state;
         program_state.escrow_bump = ctx.bumps.reward_escrow;
         
@@ -121,6 +145,7 @@ pub mod defai_staking {
             user_stake.owner = ctx.accounts.user.key();
             user_stake.staked_amount = amount;
             user_stake.stake_timestamp = clock.unix_timestamp;
+            user_stake.last_stake_timestamp = clock.unix_timestamp;  // Set both timestamps for new stake
             user_stake.last_claim_timestamp = clock.unix_timestamp;
             user_stake.locked_until = clock.unix_timestamp + 7 * 24 * 60 * 60; // 7 day initial lock
             user_stake.rewards_earned = 0;
@@ -141,6 +166,7 @@ pub mod defai_staking {
             user_stake.rewards_earned = user_stake.rewards_earned.checked_add(pending_rewards).unwrap();
             user_stake.staked_amount = user_stake.staked_amount.checked_add(amount).unwrap();
             user_stake.last_claim_timestamp = clock.unix_timestamp;
+            user_stake.last_stake_timestamp = clock.unix_timestamp;  // Update last stake timestamp on additional stakes
         }
         
         // Update tier based on new total
@@ -189,9 +215,9 @@ pub mod defai_staking {
         user_stake.rewards_earned = user_stake.rewards_earned.checked_add(pending_rewards).unwrap();
         user_stake.last_claim_timestamp = clock.unix_timestamp;
         
-        // Calculate unstaking penalty
+        // Calculate unstaking penalty using last stake timestamp
         let penalty = calculate_unstake_penalty(
-            user_stake.stake_timestamp,
+            user_stake.last_stake_timestamp,
             clock.unix_timestamp,
             amount,
         )?;
@@ -377,34 +403,6 @@ pub mod defai_staking {
         Ok(())
     }
 
-    pub fn update_defai_mint(
-        ctx: Context<UpdateDefaiMint>,
-        new_mint: Pubkey,
-    ) -> Result<()> {
-        let program_state = &mut ctx.accounts.program_state;
-        let old_mint = program_state.defai_mint;
-        
-        // Ensure the new mint is valid
-        require!(
-            ctx.accounts.new_defai_mint.key() == new_mint,
-            StakingError::InvalidMint
-        );
-        
-        // Update the mint
-        program_state.defai_mint = new_mint;
-        
-        emit!(DefaiMintUpdatedEvent {
-            old_mint,
-            new_mint,
-            authority: ctx.accounts.authority.key(),
-            timestamp: Clock::get()?.unix_timestamp,
-        });
-        
-        msg!("DEFAI mint updated from {} to {}", old_mint, new_mint);
-        
-        Ok(())
-    }
-
     pub fn pause_program(ctx: Context<PauseProgram>, paused: bool) -> Result<()> {
         let program_state = &mut ctx.accounts.program_state;
         program_state.paused = paused;
@@ -516,7 +514,8 @@ pub struct UserStake {
     pub rewards_earned: u64,
     pub rewards_claimed: u64,
     pub tier: u8,
-    pub stake_timestamp: i64,
+    pub stake_timestamp: i64,         // Initial stake timestamp
+    pub last_stake_timestamp: i64,    // Most recent stake timestamp for penalty calculation
     pub last_claim_timestamp: i64,
     pub locked_until: i64,
 }
@@ -591,10 +590,29 @@ pub struct InitializeEscrow<'info> {
 
 #[derive(Accounts)]
 pub struct FundEscrow<'info> {
-    #[account(mut)]
+    // Bring in ProgramState to access authoritative addresses
+    #[account(
+        seeds = [b"program-state"],
+        bump
+    )]
+    pub program_state: Account<'info, ProgramState>,
+    
+    #[account(
+        mut,
+        // Ensure reward_escrow is the correct PDA
+        seeds = [b"reward-escrow", program_state.key().as_ref()],
+        bump = program_state.escrow_bump
+    )]
     pub reward_escrow: Account<'info, RewardEscrow>,
     
-    #[account(mut)]
+    #[account(
+        mut,
+        // Ensure escrow_token_account is the correct ATA and is owned by reward_escrow
+        seeds = [b"escrow-vault", program_state.key().as_ref()],
+        bump,
+        token::authority = reward_escrow,
+        token::mint = defai_mint,  // Ensure the ATA's mint matches the provided mint
+    )]
     pub escrow_token_account: InterfaceAccount<'info, TokenAccount>,
     
     #[account(mut)]
@@ -603,7 +621,12 @@ pub struct FundEscrow<'info> {
     #[account(mut)]
     pub funder: Signer<'info>,
     
+    #[account(
+        // Ensure the provided mint is the official one from ProgramState
+        constraint = defai_mint.key() == program_state.defai_mint @ StakingError::InvalidMint
+    )]
     pub defai_mint: InterfaceAccount<'info, Mint>,
+    
     pub token_program: Interface<'info, TokenInterface>,
 }
 
@@ -615,18 +638,27 @@ pub struct StakeTokens<'info> {
     #[account(
         init_if_needed,
         payer = user,
-        space = 8 + 32 + 8 + 8 + 8 + 1 + 8 + 8 + 8,
+        space = 8 + 32 + 8 + 8 + 8 + 1 + 8 + 8 + 8 + 8,  // Added 8 bytes for last_stake_timestamp
         seeds = [b"user-stake", user.key().as_ref()],
         bump
     )]
     pub user_stake: Account<'info, UserStake>,
     
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"stake-vault", program_state.key().as_ref()],
+        bump = program_state.vault_bump,
+        token::authority = stake_vault,
+        token::mint = defai_mint
+    )]
     pub stake_vault: InterfaceAccount<'info, TokenAccount>,
     
     #[account(mut)]
     pub user_token_account: InterfaceAccount<'info, TokenAccount>,
     
+    #[account(
+        constraint = defai_mint.key() == program_state.defai_mint @ StakingError::InvalidMint
+    )]
     pub defai_mint: InterfaceAccount<'info, Mint>,
     
     #[account(mut)]
@@ -649,18 +681,37 @@ pub struct UnstakeTokens<'info> {
     )]
     pub user_stake: Account<'info, UserStake>,
     
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"stake-vault", program_state.key().as_ref()],
+        bump = program_state.vault_bump,
+        token::authority = stake_vault,
+        token::mint = defai_mint
+    )]
     pub stake_vault: InterfaceAccount<'info, TokenAccount>,
     
     #[account(mut)]
     pub user_token_account: InterfaceAccount<'info, TokenAccount>,
     
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"reward-escrow", program_state.key().as_ref()],
+        bump = program_state.escrow_bump
+    )]
     pub reward_escrow: Account<'info, RewardEscrow>,
     
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"escrow-vault", program_state.key().as_ref()],
+        bump,
+        token::authority = reward_escrow,
+        token::mint = defai_mint
+    )]
     pub escrow_token_account: InterfaceAccount<'info, TokenAccount>,
     
+    #[account(
+        constraint = defai_mint.key() == program_state.defai_mint @ StakingError::InvalidMint
+    )]
     pub defai_mint: InterfaceAccount<'info, Mint>,
     
     #[account(mut)]
@@ -711,18 +762,6 @@ pub struct UpdateAuthority<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UpdateDefaiMint<'info> {
-    #[account(
-        mut,
-        has_one = authority @ StakingError::InvalidAuthority
-    )]
-    pub program_state: Account<'info, ProgramState>,
-    pub authority: Signer<'info>,
-    #[account(mut)]
-    pub new_defai_mint: InterfaceAccount<'info, Mint>,
-}
-
-#[derive(Accounts)]
 pub struct PauseProgram<'info> {
     #[account(
         mut,
@@ -745,7 +784,12 @@ pub struct CompoundRewards<'info> {
     )]
     pub user_stake: Account<'info, UserStake>,
     
-    #[account(mut)]
+    #[account(
+        mut,
+        // Add this constraint to ensure it's the official PDA
+        seeds = [b"reward-escrow", program_state.key().as_ref()],
+        bump = program_state.escrow_bump
+    )]
     pub reward_escrow: Account<'info, RewardEscrow>,
     
     pub user: Signer<'info>,
@@ -805,14 +849,6 @@ pub struct RewardsCompoundedEvent {
     pub new_stake_amount: u64,
     pub old_tier: u8,
     pub new_tier: u8,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct DefaiMintUpdatedEvent {
-    pub old_mint: Pubkey,
-    pub new_mint: Pubkey,
-    pub authority: Pubkey,
     pub timestamp: i64,
 }
 
