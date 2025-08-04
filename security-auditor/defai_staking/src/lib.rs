@@ -51,7 +51,8 @@ pub mod defai_staking {
         program_state.total_users = 0;
         program_state.paused = false;
         program_state.vault_bump = ctx.bumps.stake_vault;
-        program_state.escrow_bump = 0; // Will be set in initialize_escrow
+        program_state.reward_escrow_bump = 0; // Will be set in initialize_escrow
+        program_state.escrow_vault_bump = 0;  // Will be set in initialize_escrow
         program_state.pending_authority = None;
         program_state.authority_change_timestamp = 0;
         
@@ -72,7 +73,8 @@ pub mod defai_staking {
         msg!("Escrow initialized by authority: {}", ctx.accounts.authority.key());
         
         let program_state = &mut ctx.accounts.program_state;
-        program_state.escrow_bump = ctx.bumps.reward_escrow;
+        program_state.reward_escrow_bump = ctx.bumps.reward_escrow;
+        program_state.escrow_vault_bump = ctx.bumps.escrow_token_account;
         
         let escrow = &mut ctx.accounts.reward_escrow;
         escrow.authority = program_state.key();
@@ -318,7 +320,7 @@ pub mod defai_staking {
         let escrow_seeds = &[
             b"reward-escrow",
             program_state_key.as_ref(),
-            &[ctx.accounts.program_state.escrow_bump],
+            &[ctx.accounts.program_state.reward_escrow_bump],
         ];
         let escrow_signer = &[&escrow_seeds[..]];
         
@@ -493,8 +495,9 @@ pub struct ProgramState {
     pub total_staked: u64,
     pub total_users: u64,
     pub paused: bool,
-    pub vault_bump: u8,
-    pub escrow_bump: u8,
+    pub vault_bump: u8,              // Bump for stake-vault PDA
+    pub reward_escrow_bump: u8,      // Bump for reward-escrow PDA
+    pub escrow_vault_bump: u8,       // Bump for escrow-vault PDA (token account)
     pub pending_authority: Option<Pubkey>,
     pub authority_change_timestamp: i64,
 }
@@ -526,7 +529,7 @@ pub struct InitializeProgram<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + 32 + 32 + 8 + 8 + 1 + 1 + 1 + 33 + 8,
+        space = 8 + 32 + 32 + 8 + 8 + 1 + 1 + 1 + 1 + 33 + 8,  // Added 1 byte for escrow_vault_bump
         seeds = [b"program-state"],
         bump
     )]
@@ -601,7 +604,7 @@ pub struct FundEscrow<'info> {
         mut,
         // Ensure reward_escrow is the correct PDA
         seeds = [b"reward-escrow", program_state.key().as_ref()],
-        bump = program_state.escrow_bump
+        bump = program_state.reward_escrow_bump
     )]
     pub reward_escrow: Account<'info, RewardEscrow>,
     
@@ -609,7 +612,7 @@ pub struct FundEscrow<'info> {
         mut,
         // Ensure escrow_token_account is the correct ATA and is owned by reward_escrow
         seeds = [b"escrow-vault", program_state.key().as_ref()],
-        bump,
+        bump = program_state.escrow_vault_bump,
         token::authority = reward_escrow,
         token::mint = defai_mint,  // Ensure the ATA's mint matches the provided mint
     )]
@@ -696,14 +699,14 @@ pub struct UnstakeTokens<'info> {
     #[account(
         mut,
         seeds = [b"reward-escrow", program_state.key().as_ref()],
-        bump = program_state.escrow_bump
+        bump = program_state.reward_escrow_bump
     )]
     pub reward_escrow: Account<'info, RewardEscrow>,
     
     #[account(
         mut,
         seeds = [b"escrow-vault", program_state.key().as_ref()],
-        bump,
+        bump = program_state.escrow_vault_bump,
         token::authority = reward_escrow,
         token::mint = defai_mint
     )]
@@ -734,15 +737,28 @@ pub struct ClaimRewards<'info> {
     )]
     pub user_stake: Account<'info, UserStake>,
     
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"reward-escrow", program_state.key().as_ref()],
+        bump = program_state.reward_escrow_bump
+    )]
     pub reward_escrow: Account<'info, RewardEscrow>,
     
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"escrow-vault", program_state.key().as_ref()],
+        bump = program_state.escrow_vault_bump,
+        token::authority = reward_escrow,
+        token::mint = defai_mint
+    )]
     pub escrow_token_account: InterfaceAccount<'info, TokenAccount>,
     
     #[account(mut)]
     pub user_token_account: InterfaceAccount<'info, TokenAccount>,
     
+    #[account(
+        constraint = defai_mint.key() == program_state.defai_mint @ StakingError::InvalidMint
+    )]
     pub defai_mint: InterfaceAccount<'info, Mint>,
     
     pub user: Signer<'info>,
@@ -788,7 +804,7 @@ pub struct CompoundRewards<'info> {
         mut,
         // Add this constraint to ensure it's the official PDA
         seeds = [b"reward-escrow", program_state.key().as_ref()],
-        bump = program_state.escrow_bump
+        bump = program_state.reward_escrow_bump
     )]
     pub reward_escrow: Account<'info, RewardEscrow>,
     

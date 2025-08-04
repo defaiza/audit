@@ -424,7 +424,11 @@
             "type": "u8"
           },
           {
-            "name": "escrowBump",
+            "name": "rewardEscrowBump",
+            "type": "u8"
+          },
+          {
+            "name": "escrowVaultBump",
             "type": "u8"
           },
           {
