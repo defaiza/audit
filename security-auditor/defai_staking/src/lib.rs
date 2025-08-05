@@ -169,6 +169,7 @@ pub mod defai_staking {
             user_stake.staked_amount = user_stake.staked_amount.checked_add(amount).unwrap();
             user_stake.last_claim_timestamp = clock.unix_timestamp;
             user_stake.last_stake_timestamp = clock.unix_timestamp;  // Update last stake timestamp on additional stakes
+            user_stake.locked_until = clock.unix_timestamp + 7 * 24 * 60 * 60; // Extend lock period for additional stakes
         }
         
         // Update tier based on new total
