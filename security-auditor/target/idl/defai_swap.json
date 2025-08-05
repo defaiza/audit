@@ -453,6 +453,10 @@
               32
             ]
           }
+        },
+        {
+          "name": "ogTier0Supply",
+          "type": "u16"
         }
       ]
     },

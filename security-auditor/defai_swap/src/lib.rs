@@ -264,6 +264,7 @@ pub mod defai_swap {
         tier_uri_prefixes: Vec<String>,
         og_tier_0_merkle_root: [u8; 32],  // For MAY20DEFAIHolders.csv - NFT minting with 1:1 vesting
         airdrop_merkle_root: [u8; 32],    // For 10_1AIR-Sheet1.csv - Pure vesting, no NFT
+        og_tier_0_supply: u16,            // Reserved supply for OG holders
     ) -> Result<()> {
         let collection_config = &mut ctx.accounts.collection_config;
         collection_config.authority = ctx.accounts.authority.key();
@@ -283,6 +284,8 @@ pub mod defai_swap {
         collection_config.tier_minted = [0; 5];
         collection_config.og_tier_0_merkle_root = og_tier_0_merkle_root;  // MAY20DEFAIHolders merkle root
         collection_config.airdrop_merkle_root = airdrop_merkle_root;      // 10_1AIR merkle root
+        collection_config.og_tier_0_supply = og_tier_0_supply;            // Reserved supply for OG holders
+        collection_config.og_tier_0_minted = 0;                          // Initialize OG claims counter
         
         Ok(())
     }
@@ -531,10 +534,19 @@ pub mod defai_swap {
         let user_tax = &mut ctx.accounts.user_tax_state;
         let clock = Clock::get()?;
         
-        require!(
-            config.tier_minted[tier as usize] < config.tier_supplies[tier as usize],
-            ErrorCode::NoLiquidity
-        );
+        // Check supply - for tier 0, check remaining supply after reserving for OG holders
+        if tier == 0 {
+            let remaining_supply = config.tier_supplies[0].saturating_sub(config.og_tier_0_supply);
+            require!(
+                config.tier_minted[0] < remaining_supply,
+                ErrorCode::NoLiquidity
+            );
+        } else {
+            require!(
+                config.tier_minted[tier as usize] < config.tier_supplies[tier as usize],
+                ErrorCode::NoLiquidity
+            );
+        }
         
         let price = config.tier_prices[tier as usize];
         
