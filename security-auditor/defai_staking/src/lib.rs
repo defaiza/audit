@@ -147,7 +147,6 @@ pub mod defai_staking {
             user_stake.owner = ctx.accounts.user.key();
             user_stake.staked_amount = amount;
             user_stake.stake_timestamp = clock.unix_timestamp;
-            user_stake.last_stake_timestamp = clock.unix_timestamp;  // Set both timestamps for new stake
             user_stake.last_claim_timestamp = clock.unix_timestamp;
             user_stake.locked_until = clock.unix_timestamp + 7 * 24 * 60 * 60; // 7 day initial lock
             user_stake.rewards_earned = 0;
@@ -168,8 +167,6 @@ pub mod defai_staking {
             user_stake.rewards_earned = user_stake.rewards_earned.checked_add(pending_rewards).unwrap();
             user_stake.staked_amount = user_stake.staked_amount.checked_add(amount).unwrap();
             user_stake.last_claim_timestamp = clock.unix_timestamp;
-            user_stake.last_stake_timestamp = clock.unix_timestamp;  // Update last stake timestamp on additional stakes
-            user_stake.locked_until = clock.unix_timestamp + 7 * 24 * 60 * 60; // Extend lock period for additional stakes
         }
         
         // Update tier based on new total
@@ -218,9 +215,9 @@ pub mod defai_staking {
         user_stake.rewards_earned = user_stake.rewards_earned.checked_add(pending_rewards).unwrap();
         user_stake.last_claim_timestamp = clock.unix_timestamp;
         
-        // Calculate unstaking penalty using last stake timestamp
+        // Calculate unstaking penalty using stake timestamp
         let penalty = calculate_unstake_penalty(
-            user_stake.last_stake_timestamp,
+            user_stake.stake_timestamp,
             clock.unix_timestamp,
             amount,
         )?;
@@ -519,7 +516,6 @@ pub struct UserStake {
     pub rewards_claimed: u64,
     pub tier: u8,
     pub stake_timestamp: i64,         // Initial stake timestamp
-    pub last_stake_timestamp: i64,    // Most recent stake timestamp for penalty calculation
     pub last_claim_timestamp: i64,
     pub locked_until: i64,
 }
@@ -642,7 +638,7 @@ pub struct StakeTokens<'info> {
     #[account(
         init_if_needed,
         payer = user,
-        space = 8 + 32 + 8 + 8 + 8 + 1 + 8 + 8 + 8 + 8,  // Added 8 bytes for last_stake_timestamp
+        space = 8 + 32 + 8 + 8 + 8 + 1 + 8 + 8 + 8,  // UserStake account size
         seeds = [b"user-stake", user.key().as_ref()],
         bump
     )]
