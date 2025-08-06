@@ -498,6 +498,10 @@
             "type": "i64"
           },
           {
+            "name": "lastStakeTimestamp",
+            "type": "i64"
+          },
+          {
             "name": "lastClaimTimestamp",
             "type": "i64"
           },
