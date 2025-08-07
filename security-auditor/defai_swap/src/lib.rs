@@ -1397,7 +1397,6 @@ pub struct SwapOldDefaiForPnftV6<'info> {
 pub struct RedeemV6<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
-    #[account(mut)]
     pub nft_mint: InterfaceAccount<'info, Mint>,
     #[account(
         mut,

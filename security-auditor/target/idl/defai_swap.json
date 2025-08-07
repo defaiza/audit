@@ -768,7 +768,7 @@
         },
         {
           "name": "nftMint",
-          "isMut": true,
+          "isMut": false,
           "isSigner": false
         },
         {
