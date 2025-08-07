@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::{
     token::{self, Token, TokenAccount, Transfer},
     token_2022::{self as token22, Token2022},
-    token_interface::{TokenAccount as TokenAccount2022, TransferChecked},
+    token_interface::{TokenAccount as TokenAccount2022, TransferChecked, Burn, CloseAccount, Mint},
 };
 use anchor_lang::prelude::InterfaceAccount;
 
@@ -12,7 +12,7 @@ use randomness::*;
 pub mod vrf;
 use vrf::*;
 
-declare_id!("FxtwFmgibGqiiSQgpXy34eoDYjbTaXTCsvpvpzX2VReA");
+declare_id!("DB9Zvhdp5xh853d2Tr2HBkRDDaCSioD7vwchhcGaXCw3");
 
 // Tax configuration constants (basis points = parts per 10_000)
 const INITIAL_TAX_BPS: u16 = 500;     // 5%
@@ -658,6 +658,28 @@ pub mod defai_swap {
         
         token22::transfer_checked(transfer_ctx, amount_to_transfer, 6)?;
         
+        // BURN THE NFT - prevent any future use
+        let burn_ctx = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            Burn {
+                mint: ctx.accounts.nft_mint.to_account_info(),
+                from: ctx.accounts.user_nft_ata.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        token22::burn(burn_ctx, 1)?;
+        
+        // CLOSE THE NFT TOKEN ACCOUNT - reclaim rent to user
+        let close_ctx = CpiContext::new(
+            ctx.accounts.token_program_2022.to_account_info(),
+            CloseAccount {
+                account: ctx.accounts.user_nft_ata.to_account_info(),
+                destination: ctx.accounts.user.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        token22::close_account(close_ctx)?;
+        
         // Mark as claimed
         bonus_state.claimed = true;
         
@@ -675,6 +697,7 @@ pub mod defai_swap {
             bonus_state.fee_deducted, 
             amount_to_transfer
         );
+        msg!("NFT burned and account closed - redemption complete and irreversible");
         msg!("=== REDEEM V6 COMPLETE ===");
         Ok(())
     }
@@ -1374,9 +1397,14 @@ pub struct SwapOldDefaiForPnftV6<'info> {
 pub struct RedeemV6<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
-    /// CHECK: NFT mint
-    pub nft_mint: AccountInfo<'info>,
     #[account(mut)]
+    pub nft_mint: InterfaceAccount<'info, Mint>,
+    #[account(
+        mut,
+        constraint = user_nft_ata.mint == nft_mint.key() @ ErrorCode::InvalidNft,
+        constraint = user_nft_ata.owner == user.key() @ ErrorCode::NoNft,
+        constraint = user_nft_ata.amount == 1 @ ErrorCode::NoNft
+    )]
     pub user_nft_ata: InterfaceAccount<'info, TokenAccount2022>,
     #[account(mut)]
     pub user_defai_ata: InterfaceAccount<'info, TokenAccount2022>,

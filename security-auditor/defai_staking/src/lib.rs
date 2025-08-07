@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface, transfer_checked, TransferChecked};
 
-declare_id!("DpAeweyqvHt7iuufYGoJC7oJXbpBNFgeDWCh2jKfwyWd");
+declare_id!("2TLhCW35y5jcuoKtfwTx7H5EPMqUtCf3UQhYKdKKg3Hq");
 
 // Constants for sustainable economics
 pub const GOLD_MIN: u64 = 10_000_000 * 10u64.pow(6);      // 10M DEFAI
