@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::{
     token::{self, Token, TokenAccount, Transfer},
     token_2022::{self as token22, Token2022},
-    token_interface::{TokenAccount as TokenAccount2022, TransferChecked, Burn, CloseAccount, Mint},
+    token_interface::{TokenAccount as TokenAccount2022, TransferChecked, Burn, CloseAccount},
 };
 use anchor_lang::prelude::InterfaceAccount;
 
@@ -1397,7 +1397,9 @@ pub struct SwapOldDefaiForPnftV6<'info> {
 pub struct RedeemV6<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
-    pub nft_mint: InterfaceAccount<'info, Mint>,
+    /// CHECK: NFT mint - needs to be mutable for burn operation
+    #[account(mut)]
+    pub nft_mint: AccountInfo<'info>,
     #[account(
         mut,
         constraint = user_nft_ata.mint == nft_mint.key() @ ErrorCode::InvalidNft,
