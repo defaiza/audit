@@ -136,6 +136,11 @@
           "isSigner": true
         },
         {
+          "name": "defaiMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "tokenProgram",
           "isMut": false,
           "isSigner": false

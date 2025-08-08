@@ -69,7 +69,8 @@ pub mod defai_swap {
         cfg.paused = false;
         cfg.pending_admin = None;
         cfg.admin_change_timestamp = 0;
-        cfg.vrf_enabled = false; 
+        // Auto-enable VRF by default; ensure VRF state is initialized and randomness consumed before swaps
+        cfg.vrf_enabled = true; 
 
         // Persist escrow bump for later signer seeds
         let escrow = &mut ctx.accounts.escrow;
@@ -80,6 +81,14 @@ pub mod defai_swap {
         tax_state.current_bps = INITIAL_TAX_BPS;
         tax_state.bump = ctx.bumps.tax_state;
         tax_state.last_reset_ts = Clock::get()?.unix_timestamp;
+        Ok(())
+    }
+
+    // Initialize the legacy OLD token escrow account owned by the escrow PDA.
+    // This creates the SPL-Token account that will receive OLD tokens during swaps.
+    pub fn init_escrow_old(ctx: Context<InitEscrowOld>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, ErrorCode::Unauthorized);
+        msg!("Initialized OLD token escrow account");
         Ok(())
     }
 
@@ -300,6 +309,7 @@ pub mod defai_swap {
         _symbol: String,
     ) -> Result<()> {
         msg!("=== SWAP OG TIER 0 FOR PNFT V6 START ===");
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
         
         let config = &ctx.accounts.collection_config;
         let og_claim = &mut ctx.accounts.og_tier0_claim;
@@ -336,17 +346,25 @@ pub mod defai_swap {
         );
         
         // No tax for OG tier 0 holders - they mint for free
-        // Generate random bonus using improved randomness
+        // Generate random bonus using secure randomness / VRF when enabled
         let (min_bonus, max_bonus) = get_tier_bonus_range(0);
-        let recent_blockhash = ctx.accounts.recent_blockhashes.data.borrow();
-        let blockhash_bytes: [u8; 32] = recent_blockhash[8..40].try_into().unwrap();
-        
-        let random_value = generate_secure_random(
-            &ctx.accounts.user.key(),
-            &ctx.accounts.nft_mint.key(),
-            &clock,
-            &blockhash_bytes,
-        );
+        let random_value = if ctx.accounts.config.vrf_enabled {
+            require!(ctx.accounts.vrf_state.result_buffer != [0u8; 32], ErrorCode::VrfNotReady);
+            generate_vrf_random(
+                &ctx.accounts.vrf_state.result_buffer,
+                &ctx.accounts.user.key(),
+                &ctx.accounts.nft_mint.key(),
+            )
+        } else {
+            let recent_blockhash = ctx.accounts.recent_blockhashes.data.borrow();
+            let blockhash_bytes: [u8; 32] = recent_blockhash[8..40].try_into().unwrap();
+            generate_secure_random(
+                &ctx.accounts.user.key(),
+                &ctx.accounts.nft_mint.key(),
+                &clock,
+                &blockhash_bytes,
+            )
+        };
         let random_bonus = calculate_random_bonus(random_value, min_bonus, max_bonus);
         
         // Set up bonus state
@@ -400,6 +418,7 @@ pub mod defai_swap {
     ) -> Result<()> {
         msg!("=== SWAP DEFAI FOR PNFT V6 START ===");
         require!(tier < 5, ErrorCode::InvalidTier);
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
         
         let config = &mut ctx.accounts.collection_config;
         let user_tax = &mut ctx.accounts.user_tax_state;
@@ -458,17 +477,25 @@ pub mod defai_swap {
         );
         token22::transfer_checked(cpi_ctx_net, net_amount, 6)?;
         
-        // Generate random bonus using improved randomness
+        // Generate random bonus using VRF when enabled; otherwise fallback
         let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
-        let recent_blockhash = ctx.accounts.recent_blockhashes.data.borrow();
-        let blockhash_bytes: [u8; 32] = recent_blockhash[8..40].try_into().unwrap();
-        
-        let random_value = generate_secure_random(
-            &ctx.accounts.user.key(),
-            &ctx.accounts.nft_mint.key(),
-            &clock,
-            &blockhash_bytes,
-        );
+        let random_value = if ctx.accounts.config.vrf_enabled {
+            require!(ctx.accounts.vrf_state.result_buffer != [0u8; 32], ErrorCode::VrfNotReady);
+            generate_vrf_random(
+                &ctx.accounts.vrf_state.result_buffer,
+                &ctx.accounts.user.key(),
+                &ctx.accounts.nft_mint.key(),
+            )
+        } else {
+            let recent_blockhash = ctx.accounts.recent_blockhashes.data.borrow();
+            let blockhash_bytes: [u8; 32] = recent_blockhash[8..40].try_into().unwrap();
+            generate_secure_random(
+                &ctx.accounts.user.key(),
+                &ctx.accounts.nft_mint.key(),
+                &clock,
+                &blockhash_bytes,
+            )
+        };
         let random_bonus = calculate_random_bonus(random_value, min_bonus, max_bonus);
         
         // Set up bonus state
@@ -529,6 +556,7 @@ pub mod defai_swap {
     ) -> Result<()> {
         msg!("=== SWAP OLD DEFAI FOR PNFT V6 START ===");
         require!(tier < 5, ErrorCode::InvalidTier);
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
         
         let config = &mut ctx.accounts.collection_config;
         let user_tax = &mut ctx.accounts.user_tax_state;
@@ -550,28 +578,37 @@ pub mod defai_swap {
         
         let price = config.tier_prices[tier as usize];
         
-        // Transfer OLD tokens to burn
+        // Transfer OLD tokens into program-controlled escrow (not burn)
+        // This enables the team to later sell on DEX and route liquidity into the new token.
         let cpi_ctx_old = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
                 from: ctx.accounts.user_old.to_account_info(),
-                to: ctx.accounts.burn_old.to_account_info(),
+                to: ctx.accounts.escrow_old.to_account_info(),
                 authority: ctx.accounts.user.to_account_info(),
             },
         );
         token::transfer(cpi_ctx_old, price)?;
         
-        // Generate random bonus using improved randomness
+        // Generate random bonus using VRF when enabled; otherwise fallback
         let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
-        let recent_blockhash = ctx.accounts.recent_blockhashes.data.borrow();
-        let blockhash_bytes: [u8; 32] = recent_blockhash[8..40].try_into().unwrap();
-        
-        let random_value = generate_secure_random(
-            &ctx.accounts.user.key(),
-            &ctx.accounts.nft_mint.key(),
-            &clock,
-            &blockhash_bytes,
-        );
+        let random_value = if ctx.accounts.config.vrf_enabled {
+            require!(ctx.accounts.vrf_state.result_buffer != [0u8; 32], ErrorCode::VrfNotReady);
+            generate_vrf_random(
+                &ctx.accounts.vrf_state.result_buffer,
+                &ctx.accounts.user.key(),
+                &ctx.accounts.nft_mint.key(),
+            )
+        } else {
+            let recent_blockhash = ctx.accounts.recent_blockhashes.data.borrow();
+            let blockhash_bytes: [u8; 32] = recent_blockhash[8..40].try_into().unwrap();
+            generate_secure_random(
+                &ctx.accounts.user.key(),
+                &ctx.accounts.nft_mint.key(),
+                &clock,
+                &blockhash_bytes,
+            )
+        };
         let random_bonus = calculate_random_bonus(random_value, min_bonus, max_bonus);
         
         // Set up bonus state
@@ -623,6 +660,7 @@ pub mod defai_swap {
 
     pub fn redeem_v6(ctx: Context<RedeemV6>) -> Result<()> {
         msg!("=== REDEEM V6 START ===");
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
         
         let bonus_state = &mut ctx.accounts.bonus_state;
         let vesting_state = &ctx.accounts.vesting_state;
@@ -710,6 +748,7 @@ pub mod defai_swap {
         merkle_proof: Vec<[u8; 32]>,
     ) -> Result<()> {
         msg!("=== CLAIM AIRDROP START (10:1 Air Recipients - No NFT) ===");
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
         
         let airdrop_vesting = &mut ctx.accounts.airdrop_vesting;
         let clock = Clock::get()?;
@@ -760,6 +799,7 @@ pub mod defai_swap {
 
     pub fn claim_vested_airdrop(ctx: Context<ClaimVestedAirdrop>) -> Result<()> {
         msg!("=== CLAIM VESTED AIRDROP START ===");
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
         
         let airdrop_vesting = &mut ctx.accounts.airdrop_vesting;
         let now = Clock::get()?.unix_timestamp;
@@ -819,6 +859,7 @@ pub mod defai_swap {
 
     pub fn claim_vested_v6(ctx: Context<ClaimVestedV6>) -> Result<()> {
         msg!("=== CLAIM VESTED V6 START ===");
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
         
         // NFT ownership and mint validation is now done in the account constraints
         
@@ -938,6 +979,7 @@ pub mod defai_swap {
 
     pub fn reroll_bonus_v6(ctx: Context<RerollBonusV6>) -> Result<()> {
         msg!("=== REROLL BONUS V6 START ===");
+        require!(!ctx.accounts.config.paused, ErrorCode::ProtocolPaused);
         
         // NFT ownership and mint validation is now done in the account constraints
         
@@ -992,16 +1034,24 @@ pub mod defai_swap {
         let tier = bonus_state.tier;
         let (min_bonus, max_bonus) = get_tier_bonus_range(tier);
         
-        // Use improved randomness for reroll
-        let recent_blockhash = ctx.accounts.recent_blockhashes.data.borrow();
-        let blockhash_bytes: [u8; 32] = recent_blockhash[8..40].try_into().unwrap();
-        
-        let random_value = generate_secure_random(
-            &ctx.accounts.user.key(),
-            &ctx.accounts.nft_mint.key(),
-            &clock,
-            &blockhash_bytes,
-        );
+        // Use VRF randomness when enabled; otherwise fallback
+        let random_value = if ctx.accounts.config.vrf_enabled {
+            require!(ctx.accounts.vrf_state.result_buffer != [0u8; 32], ErrorCode::VrfNotReady);
+            generate_vrf_random(
+                &ctx.accounts.vrf_state.result_buffer,
+                &ctx.accounts.user.key(),
+                &ctx.accounts.nft_mint.key(),
+            )
+        } else {
+            let recent_blockhash = ctx.accounts.recent_blockhashes.data.borrow();
+            let blockhash_bytes: [u8; 32] = recent_blockhash[8..40].try_into().unwrap();
+            generate_secure_random(
+                &ctx.accounts.user.key(),
+                &ctx.accounts.nft_mint.key(),
+                &clock,
+                &blockhash_bytes,
+            )
+        };
         let random_bonus = calculate_random_bonus(random_value, min_bonus, max_bonus);
         
         // Update bonus state
@@ -1152,6 +1202,35 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitEscrowOld<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, Config>,
+    #[account(
+        seeds = [b"escrow"],
+        bump
+    )]
+    pub escrow: Account<'info, Escrow>,
+    /// CHECK: OLD DEFAI mint
+    pub old_mint: AccountInfo<'info>,
+    #[account(
+        init,
+        payer = admin,
+        token::mint = old_mint,
+        token::authority = escrow,
+        seeds = [b"escrow_old"],
+        bump
+    )]
+    pub escrow_old: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -1238,6 +1317,12 @@ pub struct SwapOgTier0ForPnftV6<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
     pub config: Account<'info, Config>,
+    #[account(
+        mut,
+        seeds = [b"vrf_state"],
+        bump = vrf_state.bump
+    )]
+    pub vrf_state: Account<'info, VrfState>,
     #[account(mut)]
     pub collection_config: Box<Account<'info, CollectionConfig>>,
     /// CHECK: NFT mint to be created
@@ -1286,6 +1371,12 @@ pub struct SwapDefaiForPnftV6<'info> {
     pub user: Signer<'info>,
     #[account(mut)]
     pub user_defai_ata: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    #[account(
+        mut,
+        seeds = [b"vrf_state"],
+        bump = vrf_state.bump
+    )]
+    pub vrf_state: Account<'info, VrfState>,
     #[account(
         mut,
         // Validate treasury ATA matches the configured treasury
@@ -1347,10 +1438,30 @@ pub struct SwapDefaiForPnftV6<'info> {
 pub struct SwapOldDefaiForPnftV6<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = user_old.owner == user.key() @ ErrorCode::Unauthorized,
+        constraint = user_old.mint == old_defai_mint.key() @ ErrorCode::InvalidMint
+    )]
     pub user_old: Box<Account<'info, TokenAccount>>,
-    #[account(mut)]
-    pub burn_old: Box<Account<'info, TokenAccount>>,
+    /// CHECK: The legacy OLD DEFAI mint; used to verify burn
+    #[account(
+        constraint = old_defai_mint.key() == collection_config.old_defai_mint @ ErrorCode::InvalidMint
+    )]
+    pub old_defai_mint: AccountInfo<'info>,
+    #[account(
+        mut,
+        // Escrow for OLD tokens held by the program; must be owned by escrow PDA and match OLD mint
+        constraint = escrow_old.owner == escrow.key() @ ErrorCode::Unauthorized,
+        constraint = escrow_old.mint == old_defai_mint.key() @ ErrorCode::InvalidMint
+    )]
+    pub escrow_old: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        seeds = [b"vrf_state"],
+        bump = vrf_state.bump
+    )]
+    pub vrf_state: Account<'info, VrfState>,
     pub config: Account<'info, Config>,
     #[account(mut)]
     pub collection_config: Box<Account<'info, CollectionConfig>>,
@@ -1407,9 +1518,17 @@ pub struct RedeemV6<'info> {
         constraint = user_nft_ata.amount == 1 @ ErrorCode::NoNft
     )]
     pub user_nft_ata: InterfaceAccount<'info, TokenAccount2022>,
-    #[account(mut)]
+    #[account(
+        mut,
+        token::mint = defai_mint,
+        token::authority = user
+    )]
     pub user_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
-    #[account(mut)]
+    #[account(
+        mut,
+        token::mint = defai_mint,
+        token::authority = escrow
+    )]
     pub escrow_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
     /// CHECK: DEFAI mint
     pub defai_mint: AccountInfo<'info>,
@@ -1446,9 +1565,17 @@ pub struct ClaimVestedV6<'info> {
         constraint = user_nft_ata.amount == 1 @ ErrorCode::NoNft
     )]
     pub user_nft_ata: InterfaceAccount<'info, TokenAccount2022>,
-    #[account(mut)]
+    #[account(
+        mut,
+        token::mint = defai_mint,
+        token::authority = user
+    )]
     pub user_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
-    #[account(mut)]
+    #[account(
+        mut,
+        token::mint = defai_mint,
+        token::authority = escrow
+    )]
     pub escrow_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
     /// CHECK: DEFAI mint
     pub defai_mint: AccountInfo<'info>,
@@ -1515,7 +1642,10 @@ pub struct RerollBonusV6<'info> {
         constraint = user_nft_ata.amount == 1 @ ErrorCode::NoNft
     )]
     pub user_nft_ata: InterfaceAccount<'info, TokenAccount2022>,
-    #[account()]
+    #[account(
+        token::mint = defai_mint,
+        token::authority = user
+    )]
     pub user_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
     /// CHECK: DEFAI mint
     pub defai_mint: AccountInfo<'info>,
@@ -1539,6 +1669,12 @@ pub struct RerollBonusV6<'info> {
     )]
     pub user_tax_state: Account<'info, UserTaxState>,
     pub system_program: Program<'info, System>,
+    #[account(
+        mut,
+        seeds = [b"vrf_state"],
+        bump = vrf_state.bump
+    )]
+    pub vrf_state: Account<'info, VrfState>,
     /// CHECK: Sysvar for recent blockhashes
     #[account(address = solana_program::sysvar::recent_blockhashes::ID)]
     pub recent_blockhashes: AccountInfo<'info>,
@@ -1577,6 +1713,11 @@ pub struct ClaimAirdrop<'info> {
         bump
     )]
     pub collection_config: Account<'info, CollectionConfig>,
+    #[account(
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, Config>,
     pub system_program: Program<'info, System>,
 }
 
@@ -1591,9 +1732,18 @@ pub struct ClaimVestedAirdrop<'info> {
         constraint = airdrop_vesting.beneficiary == user.key()
     )]
     pub airdrop_vesting: Account<'info, AirdropVesting>,
-    #[account(mut)]
+    #[account(
+        mut,
+        token::mint = defai_mint,
+        token::authority = user
+    )]
     pub user_defai_ata: InterfaceAccount<'info, TokenAccount2022>,
-    #[account(mut)]
+    #[account(
+        mut,
+        // Ensure escrow token account is owned by escrow PDA and is the DEFAI mint
+        token::authority = escrow,
+        token::mint = defai_mint
+    )]
     pub escrow_token_account: InterfaceAccount<'info, TokenAccount2022>,
     /// CHECK: DEFAI mint
     pub defai_mint: AccountInfo<'info>,
@@ -1602,6 +1752,16 @@ pub struct ClaimVestedAirdrop<'info> {
         bump
     )]
     pub escrow: Account<'info, Escrow>,
+    #[account(
+        seeds = [b"collection_config"],
+        bump
+    )]
+    pub collection_config: Account<'info, CollectionConfig>,
+    #[account(
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, Config>,
     pub token_program: Program<'info, Token2022>,
 }
 
@@ -1819,6 +1979,8 @@ pub enum ErrorCode {
     InvalidNft,
     #[msg("VRF is already enabled")]
     VrfAlreadyEnabled,
+    #[msg("VRF result not ready")]
+    VrfNotReady,
 }
 
 // ===== Events =====

@@ -393,6 +393,12 @@ pub mod defai_estate {
         
         Ok(())
     }
+
+    // Initialize a per-estate SPL token vault for a given mint, owned by the estate PDA
+    pub fn init_estate_vault(ctx: Context<InitEstateVault>) -> Result<()> {
+        msg!("Initialized estate vault for mint {}", ctx.accounts.token_mint.key());
+        Ok(())
+    }
     
     pub fn contribute_to_trading(
         ctx: Context<ContributeToTrading>,
@@ -449,6 +455,19 @@ pub mod defai_estate {
             timestamp: Clock::get()?.unix_timestamp,
         });
         
+        Ok(())
+    }
+
+    // Helper to deposit tokens into the estate vault for a given mint
+    pub fn deposit_token_to_estate(ctx: Context<DepositTokenToEstate>, amount: u64) -> Result<()> {
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.depositor_token_account.to_account_info(),
+            to: ctx.accounts.estate_vault.to_account_info(),
+            authority: ctx.accounts.depositor.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        token::transfer(cpi_ctx, amount)?;
         Ok(())
     }
     
@@ -1726,6 +1745,35 @@ pub struct ContributeToTrading<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitEstateVault<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    #[account(
+        mut,
+        has_one = owner,
+        seeds = [ESTATE_SEED, estate.owner.as_ref(), estate.estate_number.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub estate: Account<'info, Estate>,
+    #[account(
+        init,
+        payer = owner,
+        token::mint = token_mint,
+        token::authority = estate,
+        seeds = [
+            ESTATE_VAULT_SEED,
+            estate.key().as_ref(),
+            token_mint.key().as_ref(),
+        ],
+        bump,
+    )]
+    pub estate_vault: Account<'info, TokenAccount>,
+    pub token_mint: Account<'info, Mint>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct UpdateTradingValue<'info> {
     pub ai_agent: Signer<'info>,
     
@@ -1834,6 +1882,42 @@ pub struct ExecuteTradingEmergencyWithdrawal<'info> {
     )]
     pub human_token_account: Account<'info, TokenAccount>,
     
+    pub token_mint: Account<'info, Mint>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct DepositTokenToEstate<'info> {
+    #[account(mut)]
+    pub depositor: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [
+            ESTATE_SEED,
+            estate.owner.as_ref(),
+            estate.estate_number.to_le_bytes().as_ref(),
+        ],
+        bump,
+    )]
+    pub estate: Account<'info, Estate>,
+    #[account(
+        mut,
+        token::mint = token_mint,
+        token::authority = depositor,
+    )]
+    pub depositor_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        token::mint = token_mint,
+        token::authority = estate,
+        seeds = [
+            ESTATE_VAULT_SEED,
+            estate.key().as_ref(),
+            token_mint.key().as_ref(),
+        ],
+        bump,
+    )]
+    pub estate_vault: Account<'info, TokenAccount>,
     pub token_mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
 }

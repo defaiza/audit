@@ -267,6 +267,42 @@
       ]
     },
     {
+      "name": "initEstateVault",
+      "accounts": [
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "estateVault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "contributeToTrading",
       "accounts": [
         {
@@ -281,6 +317,47 @@
         },
         {
           "name": "contributorTokenAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "estateVault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "depositTokenToEstate",
+      "accounts": [
+        {
+          "name": "depositor",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "estate",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "depositorTokenAccount",
           "isMut": true,
           "isSigner": false
         },

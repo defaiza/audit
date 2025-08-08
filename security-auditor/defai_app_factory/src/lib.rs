@@ -220,8 +220,8 @@ pub mod defai_app_factory {
         let bump = ctx.accounts.app_registration.bump;
         mint_app_sft(
             &ctx.accounts.app_registration,
-            &ctx.accounts.sft_mint,
-            &ctx.accounts.user_sft_ata,
+            &ctx.accounts.sft_mint.to_account_info(),
+            &ctx.accounts.user_sft_ata.to_account_info(),
             &ctx.accounts.token_program,
             app_id,
             bump,

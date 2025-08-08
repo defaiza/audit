@@ -193,6 +193,8 @@ pub mod defai_staking {
         ctx: Context<UnstakeTokens>,
         amount: u64,
     ) -> Result<()> {
+        // Enforce pause
+        require!(!ctx.accounts.program_state.paused, StakingError::ProgramPaused);
         let user_stake = &mut ctx.accounts.user_stake;
         let clock = Clock::get()?;
         
@@ -293,6 +295,8 @@ pub mod defai_staking {
     }
 
     pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
+        // Enforce pause
+        require!(!ctx.accounts.program_state.paused, StakingError::ProgramPaused);
         let user_stake = &mut ctx.accounts.user_stake;
         let clock = Clock::get()?;
         
@@ -420,6 +424,8 @@ pub mod defai_staking {
     }
     
     pub fn compound_rewards(ctx: Context<CompoundRewards>) -> Result<()> {
+        // Enforce pause
+        require!(!ctx.accounts.program_state.paused, StakingError::ProgramPaused);
         let user_stake = &mut ctx.accounts.user_stake;
         let clock = Clock::get()?;
         

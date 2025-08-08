@@ -61,6 +61,47 @@
       ]
     },
     {
+      "name": "initEscrowOld",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "escrow",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "oldMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "escrowOld",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "updatePrices",
       "accounts": [
         {
@@ -477,6 +518,11 @@
           "isSigner": false
         },
         {
+          "name": "vrfState",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
           "name": "collectionConfig",
           "isMut": true,
           "isSigner": false
@@ -567,6 +613,11 @@
         },
         {
           "name": "userDefaiAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "vrfState",
           "isMut": true,
           "isSigner": false
         },
@@ -674,7 +725,17 @@
           "isSigner": false
         },
         {
-          "name": "burnOld",
+          "name": "oldDefaiMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "escrowOld",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "vrfState",
           "isMut": true,
           "isSigner": false
         },
@@ -847,6 +908,11 @@
           "isSigner": false
         },
         {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "systemProgram",
           "isMut": false,
           "isSigner": false
@@ -900,6 +966,16 @@
         },
         {
           "name": "escrow",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "collectionConfig",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "config",
           "isMut": false,
           "isSigner": false
         },
@@ -1105,6 +1181,11 @@
         {
           "name": "systemProgram",
           "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "vrfState",
+          "isMut": true,
           "isSigner": false
         },
         {
@@ -1671,6 +1752,9 @@
           },
           {
             "name": "VrfAlreadyEnabled"
+          },
+          {
+            "name": "VrfNotReady"
           }
         ]
       }

@@ -77,8 +77,8 @@ pub fn execute_token_transfers<'info>(
 // Separate SFT minting logic
 pub fn mint_app_sft<'info>(
     app_registration: &Account<'info, AppRegistration>,
-    sft_mint: &Account<'info, Mint>,
-    user_sft_ata: &Account<'info, TokenAccount>,
+    sft_mint: &AccountInfo<'info>,
+    user_sft_ata: &AccountInfo<'info>,
     token_program: &Program<'info, Token>,
     app_id: u64,
     bump: u8,
@@ -93,8 +93,8 @@ pub fn mint_app_sft<'info>(
     let mint_ctx = CpiContext::new_with_signer(
         token_program.to_account_info(),
         MintTo {
-            mint: sft_mint.to_account_info(),
-            to: user_sft_ata.to_account_info(),
+            mint: sft_mint.clone(),
+            to: user_sft_ata.clone(),
             authority: app_registration.to_account_info(),
         },
         signer_seeds,
@@ -136,7 +136,7 @@ pub struct PurchaseAppAccessOptimized<'info> {
     )]
     pub sft_mint: Box<Account<'info, Mint>>,
     
-    // Pre-created ATAs (no init_if_needed)
+    // Pre-created ATAs (smaller stack than init_if_needed variant here)
     #[account(mut)]
     pub user_sft_ata: Box<Account<'info, TokenAccount>>,
     
@@ -152,6 +152,70 @@ pub struct PurchaseAppAccessOptimized<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
     
+    /// CHECK: DEFAI mint to bind ATAs
+    pub defai_mint: AccountInfo<'info>,
+    
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+// Separate, lightweight initializer to create all needed ATAs via associated token program
+#[derive(Accounts)]
+#[instruction(app_id: u64)]
+pub struct PreparePurchaseAccounts<'info> {
+    #[account(
+        seeds = [b"app_factory"],
+        bump
+    )]
+    pub app_factory: Box<Account<'info, AppFactory>>,
+    
+    #[account(
+        mut,
+        seeds = [b"app_registration".as_ref(), &app_id.to_le_bytes()],
+        bump
+    )]
+    pub app_registration: Box<Account<'info, AppRegistration>>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    /// CHECK: DEFAI mint to bind ATAs
+    #[account(constraint = defai_mint.key() == app_factory.defai_mint @ AppFactoryError::InvalidDefaiMint)]
+    pub defai_mint: AccountInfo<'info>,
+    
+    /// CHECK: Creator must match registration
+    #[account(address = app_registration.creator)]
+    pub creator: AccountInfo<'info>,
+    
+    /// CHECK: Treasury must match factory
+    #[account(address = app_factory.treasury)]
+    pub treasury: AccountInfo<'info>,
+    
+    #[account(
+        init_if_needed,
+        payer = user,
+        associated_token::mint = defai_mint,
+        associated_token::authority = user,
+    )]
+    pub user_defai_ata: Box<Account<'info, TokenAccount>>,
+    
+    #[account(
+        init_if_needed,
+        payer = user,
+        associated_token::mint = defai_mint,
+        associated_token::authority = creator,
+    )]
+    pub creator_defai_ata: Box<Account<'info, TokenAccount>>,
+    
+    #[account(
+        init_if_needed,
+        payer = user,
+        associated_token::mint = defai_mint,
+        associated_token::authority = treasury,
+    )]
+    pub treasury_defai_ata: Box<Account<'info, TokenAccount>>,
+    
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, anchor_spl::associated_token::AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
