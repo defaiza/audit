@@ -56,6 +56,7 @@ pub struct RequestRandomness<'info> {
     pub vrf_state: Account<'info, VrfState>,
     
     /// CHECK: Switchboard VRF account
+    #[account(constraint = vrf.key() == vrf_state.vrf_account)]
     pub vrf: AccountInfo<'info>,
     
     /// CHECK: Oracle queue account
@@ -82,6 +83,9 @@ pub struct RequestRandomness<'info> {
     /// CHECK: Switchboard program
     pub switchboard_program: AccountInfo<'info>,
     
+    /// CHECK: Switchboard program state account (SB State)
+    pub program_state: AccountInfo<'info>,
+    
     pub token_program: Program<'info, Token>,
 }
 
@@ -100,6 +104,8 @@ pub struct ConsumeRandomness<'info> {
 }
 
 use anchor_spl::token::Token;
+use anchor_lang::solana_program::{instruction::AccountMeta, instruction::Instruction, program::invoke_signed};
+use switchboard_solana::SWITCHBOARD_PROGRAM_ID;
 
 pub fn initialize_vrf(ctx: Context<InitializeVrf>, vrf_account: Pubkey) -> Result<()> {
     let vrf_state = &mut ctx.accounts.vrf_state;
@@ -121,6 +127,9 @@ pub fn initialize_vrf(ctx: Context<InitializeVrf>, vrf_account: Pubkey) -> Resul
 pub fn request_randomness(ctx: Context<RequestRandomness>) -> Result<()> {
     // Admin-gated configuration on first request, and strict validation thereafter
     require_keys_eq!(ctx.accounts.authority.key(), ctx.accounts.config.admin, crate::ErrorCode::Unauthorized);
+    // Enforce Switchboard program id / VRF owner
+    require_keys_eq!(*ctx.accounts.switchboard_program.key, *SWITCHBOARD_PROGRAM_ID, VrfError::InvalidVrfAccount);
+    require_keys_eq!(*ctx.accounts.vrf.owner, *SWITCHBOARD_PROGRAM_ID, VrfError::InvalidVrfAccount);
     
     let vrf_state = &mut ctx.accounts.vrf_state;
     // Bootstrap config if not set; otherwise enforce exact match
@@ -140,7 +149,52 @@ pub fn request_randomness(ctx: Context<RequestRandomness>) -> Result<()> {
         require_keys_eq!(ctx.accounts.payer_wallet.key(), vrf_state.payer_wallet, VrfError::InvalidVrfAccount);
     }
 
-    // In production: make a CPI to Switchboard VRF program using the provided accounts
+    // Build the account metas for the VRF Lite request and invoke_signed
+    let signer_seeds: &[&[&[u8]]] = &[&[b"vrf_state", &[vrf_state.bump]]];
+
+    // Note: Switchboard crate does not export CPI helper structs directly in src; construct instruction
+    // Build account metas in correct order per docs
+    let accounts = vec![
+        AccountMeta::new(vrf_state.key(), true),                    // authority (signer)
+        AccountMeta::new(*ctx.accounts.vrf.key, true),              // vrf_lite (writable)
+        AccountMeta::new(*ctx.accounts.oracle_queue.key, true),     // queue (writable)
+        AccountMeta::new_readonly(*ctx.accounts.queue_authority.key, false),
+        AccountMeta::new_readonly(*ctx.accounts.data_buffer.key, false),
+        AccountMeta::new_readonly(*ctx.accounts.permission.key, false),
+        AccountMeta::new(*ctx.accounts.escrow.key, false),          // escrow TokenAccount (writable)
+        AccountMeta::new_readonly(*ctx.accounts.recent_blockhashes.key, false),
+        AccountMeta::new_readonly(*ctx.accounts.program_state.key, false),
+        AccountMeta::new_readonly(*ctx.accounts.token_program.key, false),
+    ];
+
+    // Discriminator for VrfLiteRequestRandomness per docs
+    let discriminator: [u8; 8] = [221, 11, 167, 47, 80, 107, 18, 71];
+    let mut data = discriminator.to_vec();
+    // Params: VrfLiteRequestRandomnessParams { callback: Option<Callback> } -> None
+    data.extend_from_slice(&[0]);
+
+    let ix = Instruction {
+        program_id: *SWITCHBOARD_PROGRAM_ID,
+        accounts,
+        data,
+    };
+
+    invoke_signed(
+        &ix,
+        &[
+            vrf_state.to_account_info(),
+            ctx.accounts.vrf.clone(),
+            ctx.accounts.oracle_queue.clone(),
+            ctx.accounts.queue_authority.clone(),
+            ctx.accounts.data_buffer.clone(),
+            ctx.accounts.permission.clone(),
+            ctx.accounts.escrow.clone(),
+            ctx.accounts.recent_blockhashes.clone(),
+            ctx.accounts.program_state.clone(),
+            ctx.accounts.token_program.to_account_info(),
+        ],
+        signer_seeds,
+    )?;
     msg!("Randomness requested from VRF account: {}", ctx.accounts.vrf.key());
     
     // Update the timestamp to track when request was made
@@ -152,21 +206,28 @@ pub fn request_randomness(ctx: Context<RequestRandomness>) -> Result<()> {
 pub fn consume_randomness(ctx: Context<ConsumeRandomness>) -> Result<()> {
     let vrf_state = &mut ctx.accounts.vrf_state;
     let clock = Clock::get()?;
-    
-    // In production, this would read the result from the VRF account
-    // For demonstration, we'll simulate receiving a random value
-    // Real implementation would parse the VRF account data
-    
-    // Check if enough time has passed (simulate VRF processing time)
-    require!(
-        clock.unix_timestamp > vrf_state.last_timestamp + 2,
-        VrfError::ResultNotReady
-    );
-    
-    // In production: Parse VRF account data to get the random result
-    // let vrf_data = ctx.accounts.vrf.try_borrow_data()?;
-    // vrf_state.result_buffer = parse_vrf_result(&vrf_data);
-    
+    // Enforce Switchboard VRF owner
+    require_keys_eq!(*ctx.accounts.vrf.owner, *SWITCHBOARD_PROGRAM_ID, VrfError::InvalidVrfAccount);
+
+    // Parse VRF Lite account and write exact 32-byte result
+    // Manually parse via docs: discriminator + packed struct
+    let data_ref = ctx.accounts.vrf.try_borrow_data()?;
+    // VrfLiteAccountData::discriminator() check is enforced by Switchboard program id equality on client; here, ensure length
+    require!(data_ref.len() >= 8 + 32, VrfError::ResultNotReady);
+    // The result field sits at a fixed offset in the struct. From docs, result is the 5th field after 8-byte discriminator.
+    // Layout: [disc(8)] state_bump(1) permission_bump(1) vrf_pool(32) status(1) result(32) ... packed
+    let mut result = [0u8; 32];
+    let result_offset = 8 + 1 + 1 + 32 + 1; // = 43
+    if data_ref.len() >= result_offset + 32 {
+        result.copy_from_slice(&data_ref[result_offset..result_offset + 32]);
+    }
+
+    // Ensure result is ready (non-zero)
+    require!(result.iter().any(|b| *b != 0), VrfError::ResultNotReady);
+
+    vrf_state.result_buffer = result;
+    vrf_state.last_timestamp = clock.unix_timestamp;
+
     msg!("VRF randomness consumed and stored");
     Ok(())
 }

@@ -346,6 +346,11 @@
           "isSigner": false
         },
         {
+          "name": "programState",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "tokenProgram",
           "isMut": false,
           "isSigner": false

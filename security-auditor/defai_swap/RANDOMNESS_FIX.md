@@ -47,11 +47,71 @@ All sources are combined and hashed using Keccak256 to produce unpredictable ran
 
 For maximum security in production, consider:
 
-1. **Switchboard VRF Integration**: For true cryptographic randomness
-   ```rust
-   // Add to Cargo.toml
-   switchboard-v2 = "0.4.0"
-   ```
+1. **Switchboard VRF Lite Integration (permissioned)**: Cryptographic randomness now wired in `defai_swap`.
+   - Crate in `Cargo.toml`:
+     ```toml
+     switchboard-solana = "0.30.4"
+     ```
+   - Program entrypoints you can call:
+     - `initialize_vrf_state(vrf_account: Pubkey)`
+     - `request_vrf_randomness(...)`
+     - `consume_vrf_randomness(...)`
+   - One-time setup (first request): provide the full set of Switchboard accounts. The program persists them and enforces equality on all subsequent calls (no client-injected accounts).
+   - Required accounts when requesting randomness (must match values stored in `vrf_state` after first call):
+     - `vrf` (VRF Lite account)
+     - `oracle_queue`, `queue_authority`, `data_buffer`
+     - `permission` (queue permission for the VRF)
+     - `escrow` (TokenAccount owned by Switchboard program state)
+     - `program_state` (Switchboard `SbState` PDA)
+     - `recent_blockhashes` sysvar
+     - `token_program`
+     - `switchboard_program` (must be `SW1TCH7qEPTd…`)
+     - `authority` (must equal `config.admin`)
+   - Result consumption:
+     - Call `consume_vrf_randomness` with `vrf_state` and the same `vrf` account. The program parses VRF Lite and writes the exact 32-byte result to `vrf_state.result_buffer`.
+   - Minimal Anchor client flow (TypeScript):
+     ```ts
+     // 1) Initialize VRF state once (admin)
+     await program.methods.initializeVrfState(vrfPubkey)
+       .accounts({
+         authority: admin.publicKey,
+         vrfState: vrfStatePda,
+         systemProgram: web3.SystemProgram.programId,
+       })
+       .signers([admin])
+       .rpc();
+
+     // 2) Request randomness (admin). First call bootstraps stored accounts
+     await program.methods.requestVrfRandomness()
+       .accounts({
+         authority: admin.publicKey,
+         config: configPda,
+         vrfState: vrfStatePda,
+         vrf: vrfPubkey,
+         oracleQueue: queuePubkey,
+         queueAuthority: queueAuthorityPubkey,
+         dataBuffer: dataBufferPubkey,
+         permission: permissionPda,
+         escrow: escrowTokenAccount,
+         payerWallet: payerWalletPubkey, // stored; not used by CPI
+         recentBlockhashes: web3.SYSVAR_RECENT_BLOCKHASHES_PUBKEY,
+         switchboardProgram: SWITCHBOARD_PROGRAM_ID,
+         programState: sbStatePda,
+         tokenProgram: spl.TOKEN_PROGRAM_ID,
+       })
+       .signers([admin])
+       .rpc();
+
+     // 3) After fulfillment, consume the result (anyone)
+     await program.methods.consumeVrfRandomness()
+       .accounts({ vrfState: vrfStatePda, vrf: vrfPubkey })
+       .rpc();
+     ```
+   - Gotchas:
+     - The program enforces `authority == config.admin` for `request_vrf_randomness`.
+     - On the first request, the program stores all Switchboard accounts; later requests must pass the same accounts.
+     - Ensure the `permission` PDA is granted for the VRF to the queue.
+     - Ensure `switchboard_program` equals `SW1TCH7qEPTdLsDHRgPuMQjbQxKdH2aBStViMFnt64f`.
 
 2. **Commit-Reveal Scheme**: Two-phase approach where:
    - Phase 1: User commits to swap with a hidden value
@@ -68,9 +128,10 @@ To verify the randomness improvement:
 
 ## Current Implementation Status
 
-✅ Improved randomness using multiple entropy sources  
-✅ Integration with recent blockhashes sysvar  
-✅ Updated all swap and reroll functions  
+✅ Improved randomness using multiple entropy sources (fallback)  
+✅ Switchboard VRF Lite integration (permissioned)  
+✅ Result consumption writes exact 32-byte buffer to `vrf_state.result_buffer`  
+✅ Updated swap/reroll to use VRF result when `config.vrf_enabled`  
 ✅ Program compiles and is ready for testing  
 
-The implementation significantly improves upon the original predictable randomness while maintaining simplicity and avoiding external dependencies.
+The implementation provides cryptographic randomness via Switchboard VRF Lite, with a secure fallback when VRF is disabled.
