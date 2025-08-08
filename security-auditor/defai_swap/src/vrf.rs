@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use crate::Config;
 
 // VRF State to store randomness results
 #[account]
@@ -7,10 +8,17 @@ pub struct VrfState {
     pub result_buffer: [u8; 32],
     pub last_timestamp: i64,
     pub vrf_account: Pubkey,
+    pub oracle_queue: Pubkey,
+    pub queue_authority: Pubkey,
+    pub data_buffer: Pubkey,
+    pub permission: Pubkey,
+    pub escrow: Pubkey,
+    pub payer_wallet: Pubkey,
 }
 
 impl VrfState {
-    pub const LEN: usize = 8 + 1 + 32 + 8 + 32;
+    // Does not include the 8-byte discriminator
+    pub const LEN: usize = 1 + 32 + 8 + 32 + (32 * 6);
 }
 
 #[derive(Accounts)]
@@ -34,6 +42,11 @@ pub struct InitializeVrf<'info> {
 pub struct RequestRandomness<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
+    #[account(
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, Config>,
     
     #[account(
         mut,
@@ -94,18 +107,43 @@ pub fn initialize_vrf(ctx: Context<InitializeVrf>, vrf_account: Pubkey) -> Resul
     vrf_state.result_buffer = [0u8; 32];
     vrf_state.last_timestamp = 0;
     vrf_state.vrf_account = vrf_account;
+    vrf_state.oracle_queue = Pubkey::default();
+    vrf_state.queue_authority = Pubkey::default();
+    vrf_state.data_buffer = Pubkey::default();
+    vrf_state.permission = Pubkey::default();
+    vrf_state.escrow = Pubkey::default();
+    vrf_state.payer_wallet = Pubkey::default();
     
     msg!("VRF state initialized with account: {}", vrf_account);
     Ok(())
 }
 
 pub fn request_randomness(ctx: Context<RequestRandomness>) -> Result<()> {
-    // In production, this would make a CPI call to Switchboard
-    // For now, we'll prepare the state for receiving randomness
+    // Admin-gated configuration on first request, and strict validation thereafter
+    require_keys_eq!(ctx.accounts.authority.key(), ctx.accounts.config.admin, crate::ErrorCode::Unauthorized);
+    
+    let vrf_state = &mut ctx.accounts.vrf_state;
+    // Bootstrap config if not set; otherwise enforce exact match
+    if vrf_state.oracle_queue == Pubkey::default() {
+        vrf_state.oracle_queue = ctx.accounts.oracle_queue.key();
+        vrf_state.queue_authority = ctx.accounts.queue_authority.key();
+        vrf_state.data_buffer = ctx.accounts.data_buffer.key();
+        vrf_state.permission = ctx.accounts.permission.key();
+        vrf_state.escrow = ctx.accounts.escrow.key();
+        vrf_state.payer_wallet = ctx.accounts.payer_wallet.key();
+    } else {
+        require_keys_eq!(ctx.accounts.oracle_queue.key(), vrf_state.oracle_queue, VrfError::InvalidVrfAccount);
+        require_keys_eq!(ctx.accounts.queue_authority.key(), vrf_state.queue_authority, VrfError::InvalidVrfAccount);
+        require_keys_eq!(ctx.accounts.data_buffer.key(), vrf_state.data_buffer, VrfError::InvalidVrfAccount);
+        require_keys_eq!(ctx.accounts.permission.key(), vrf_state.permission, VrfError::InvalidVrfAccount);
+        require_keys_eq!(ctx.accounts.escrow.key(), vrf_state.escrow, VrfError::InvalidVrfAccount);
+        require_keys_eq!(ctx.accounts.payer_wallet.key(), vrf_state.payer_wallet, VrfError::InvalidVrfAccount);
+    }
+
+    // In production: make a CPI to Switchboard VRF program using the provided accounts
     msg!("Randomness requested from VRF account: {}", ctx.accounts.vrf.key());
     
     // Update the timestamp to track when request was made
-    let vrf_state = &mut ctx.accounts.vrf_state;
     vrf_state.last_timestamp = Clock::get()?.unix_timestamp;
     
     Ok(())

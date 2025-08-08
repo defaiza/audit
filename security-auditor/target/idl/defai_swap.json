@@ -291,6 +291,11 @@
           "isSigner": true
         },
         {
+          "name": "config",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "vrfState",
           "isMut": true,
           "isSigner": false
@@ -1243,6 +1248,30 @@
           },
           {
             "name": "vrfAccount",
+            "type": "publicKey"
+          },
+          {
+            "name": "oracleQueue",
+            "type": "publicKey"
+          },
+          {
+            "name": "queueAuthority",
+            "type": "publicKey"
+          },
+          {
+            "name": "dataBuffer",
+            "type": "publicKey"
+          },
+          {
+            "name": "permission",
+            "type": "publicKey"
+          },
+          {
+            "name": "escrow",
+            "type": "publicKey"
+          },
+          {
+            "name": "payerWallet",
             "type": "publicKey"
           }
         ]
